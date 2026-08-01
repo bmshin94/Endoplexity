@@ -157,7 +157,7 @@ function resolve(ref) {
   return hit;
 }
 
-/** Viewport centre of a ref, scrolled into view first. */
+/** Centre of a ref in its own frame's coordinates, scrolled into view first. */
 async function centreOf(ref) {
   const { sessionId, backendNodeId } = resolve(ref);
   await send(sessionId, "DOM.scrollIntoViewIfNeeded", { backendNodeId });
@@ -167,18 +167,26 @@ async function centreOf(ref) {
 }
 
 /**
- * Click at the element's centre with a real mouse event.
+ * Click at the element's centre with a real mouse event, dispatched to the
+ * element's OWN session so the coordinates and the widget receiving them share
+ * one space.
  *
- * Input always goes to the MAIN session, never the frame's own: input is
- * dispatched at the page level, and Blink already reports OOPIF box models in
- * root viewport coordinates, so no offset maths is needed.
+ * Mouse events sent to the tab's main session are hit-tested by the root
+ * renderer alone and never cross into an out-of-process iframe. Measured on the
+ * fixture: the same submit button does nothing at translated root coords
+ * 104,362 on MAIN, and submits at frame coords 79,197 on the frame's session.
+ * So an OOPIF box model needs no translation — just the matching session.
+ *
+ * Keyboard is the opposite and stays on MAIN: key events follow focus, and the
+ * browser routes those into the focused OOPIF widget for us.
  */
 export async function click(ref) {
+  const { sessionId } = resolve(ref);
   const { x, y } = await centreOf(ref);
   const base = { x, y, button: "left", clickCount: 1 };
-  await send(MAIN, "Input.dispatchMouseEvent", { ...base, type: "mouseMoved", buttons: 0 });
-  await send(MAIN, "Input.dispatchMouseEvent", { ...base, type: "mousePressed", buttons: 1 });
-  await send(MAIN, "Input.dispatchMouseEvent", { ...base, type: "mouseReleased", buttons: 0 });
+  await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mouseMoved", buttons: 0 });
+  await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mousePressed", buttons: 1 });
+  await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mouseReleased", buttons: 0 });
   console.log(`comet: click ${ref} at ${Math.round(x)},${Math.round(y)}`);
 }
 

@@ -71,11 +71,15 @@ export async function selftest() {
   // The fixture writes its result into the DOM, so a second snapshot reads it
   // back — no extra tool needed.
   snap = await cdp.snapshot();
+  // Report what the fixture actually said, not just that the expected string is
+  // missing — "never submitted" and "submitted, miscounted" are different bugs
+  // and they used to fail identically.
+  const reported = snap.match(/submitted after \d+ keydowns/)?.[0];
   check(
     "trusted keystrokes reached the cross-origin form",
-    snap.includes(`submitted after ${KEYSTROKES} keydowns`)
+    reported === `submitted after ${KEYSTROKES} keydowns`
       ? null
-      : `page never reported ${KEYSTROKES} keydowns`,
+      : (reported ?? "the form never submitted at all"),
   );
   check("typed values landed", FIELDS.every(([, v]) => snap.includes(v)) ? null : "a value is missing");
 

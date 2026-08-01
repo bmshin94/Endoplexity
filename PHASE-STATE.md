@@ -27,9 +27,9 @@ devtools console — see `docs/handrun.md`.
   tests, curl showing 401/401/401/101 across the four origin+token combinations,
   `netstat` confirming no 0.0.0.0 bind, live panel `ping`→`pong` in 11ms.
 
-## Current: Phase 1 — CDP tool layer ✅ code complete (2026-07-31)
-
-Drives the page from `panel.js` via `chrome.debugger`. No model involved.
+- **P1 — CDP tool layer.** Drives the page from `panel.js` via `chrome.debugger`, no model
+  involved. Verified 2026-07-31: `npm test` 8/8 and a live `comet.selftest()` **7/7**,
+  including a trusted click landing inside a real out-of-process iframe.
 
 **Built**
 - `extension/cdp.js` — attach + flat auto-attach (`Target.setAutoAttach{autoAttach,flatten}`),
@@ -42,46 +42,39 @@ Drives the page from `panel.js` via `chrome.debugger`. No model involved.
 - `bridge/test/ax.test.ts` — 4 tests; `docs/handrun.md` — how to run it
 
 **Verified (run, not assumed)**
-- `npm test` → 8/8 pass
+- `npm test` → 8/8; live `comet.selftest()` → **7/7**
 - Fixture routes via curl → `200 text/html` both pages, `404` for `/fixtures/../../package.json`
   and unknown paths; `http://localhost:8787` does reach the 127.0.0.1-only bind
 - `chrome.debugger` flat sessions confirmed against Chrome docs: `DebuggerSession.sessionId`
   requires **Chrome 125+**, `onEvent` source carries it
 
-**Live gate run: 6/7 PASS, one real bug.** PASS on OOPIF auto-attach, fields found,
-fields in a child frame not f0, typed values landed, unknown ref rejected, refs go
-stale on navigation. FAIL on `trusted keystrokes reached the cross-origin form`.
+**The OOPIF click bug, settled.** The first gate run was 6/7: a click on a button inside
+the cross-origin frame did nothing. Diagnosed by running the same submit three ways
+against the fixture rather than by reasoning about it:
 
-**The bug — OOPIF click coordinates are frame-relative, not root-viewport.**
-`click @f1e4 at 79,197`, but the iframe does not start until y≈250 in the host page,
-so no element inside it can be at root y=197. 197 is where the submit button sits in
-the *frame's own* space (16px body margin + three label/input pairs). So the click
-landed on the host page's paragraph and the form never submitted. `type` passed
-because `DOM.focus` takes a backendNodeId and needs no coordinates — only the
-coordinate path is broken. Assumption recorded under Decisions was wrong.
+| dispatch | coords | result |
+|---|---|---|
+| main session | translated to root, `104,362` | nothing |
+| **frame's own session** | **frame-local, `79,197`** | **submitted** |
+| `requestSubmit()`, no click | — | submitted |
 
-**Fix next session**, in order of preference:
-1. Dispatch `Input.*` to the **element's own session** instead of MAIN, so the
-   coordinates and the widget receiving them share one space. Confirm CDP allows
-   the Input domain on an iframe target first — if it does this is a one-line fix.
-2. Otherwise walk up the frame chain adding offsets: `DOM.getFrameOwner({frameId})`
-   in the parent session → `DOM.getBoxModel` on that iframe element → add to the
-   child's coordinates, recursing for nested frames. This is what Playwright does.
+So mouse events sent to the tab's main session are hit-tested by the root renderer
+alone and never cross into an out-of-process iframe — the coordinates were never the
+problem, and an OOPIF box model needs no translation, just the matching session. The
+offset-walk written first (`DOM.getFrameOwner` + parent box models, Playwright's
+approach) was deleted rather than kept as a fallback. `type`/`key` stay on the main
+session: keyboard follows focus, which the browser does route into the OOPIF.
 
-Then re-run `await comet.selftest()` — one paste, expects 7/7. A real Greenhouse
-form has not been touched yet.
+A real Greenhouse form has not been touched yet — the fixture is the only evidence.
 
 ---
 
-## Next: Phase 2 — MCP server + Claude adapter
+## Current: Phase 2 — MCP server + Claude adapter
 
 Bridge serves Streamable HTTP at `/mcp`, relays each tool call over the existing WS to
 the panel, spawns `claude -p` with `--mcp-config` pointing back at itself.
 
 **Done when:** `claude -p "search google for X, open the first result"` completes unattended.
-
-Start by running `comet.selftest()` — Phase 2 is built on tools whose live behaviour is
-still unconfirmed.
 
 ## Remaining phases
 
@@ -105,9 +98,8 @@ Phase 6 is the ship line.
 - **Panel owns the WebSocket and CDP**, not the service worker — full API access, dodges
   MV3 idle teardown
 - **Auto-run, gate irreversible actions** — gate lives in the bridge, never in a prompt
-- ~~Input always dispatched to the main session; OOPIF box models come back in
-  root-viewport coordinates~~ — **disproven by the P1 self-test, see the bug above.**
-  They are frame-relative and need either a frame-local dispatch or offset maths
+- **Mouse to the element's own session, keyboard to the main session.** Measured, not
+  assumed — see the P1 table above. No coordinate translation anywhere
 - **No panel UI for tools until P3** — the console is the hand-run surface
 - **No build step yet** — plain HTML/JS extension. Add Vite + React only if P3 needs it
 - P0: **origin-ID pinning skipped deliberately.** The token already stops every realistic
@@ -126,6 +118,9 @@ Phase 6 is the ship line.
 - `.comet-token` is written `mode: 0o600` but Windows shows `-rw-r--r--` — POSIX modes are
   ignored, ACLs govern. Low risk on a single-user machine.
 - Only one debugger per tab: the tab under test must not have its own devtools open.
+- A check that asserts on one exact string can't tell "never happened" from "happened
+  wrong" — both read as absent. The P1 submit check burned a session on that; it now
+  reports what the page actually said.
 
 ## Security invariants (do not regress)
 
