@@ -2,11 +2,17 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { WebSocketServer } from "ws";
-import { authorize } from "./auth.ts";
+import type { ChildProcess } from "node:child_process";
+import { WebSocketServer, type WebSocket } from "ws";
+import { authorize, authorizeMcp } from "./auth.ts";
+import { handleMcp } from "./mcp.ts";
+import { setPanel, dropPanel, settle } from "./relay.ts";
+import { runClaude, writeMcpConfig } from "./claude.ts";
 
 const HOST = "127.0.0.1"; // never 0.0.0.0 — this socket can drive a logged-in browser
-const PORT = 8787;
+// Overridable only so a second instance can be smoke-tested without evicting the
+// one your panel is talking to. The extension always dials 8787.
+const PORT = Number(process.env.COMET_PORT ?? 8787);
 const TOKEN_PATH = fileURLToPath(new URL("../../.comet-token", import.meta.url));
 
 function loadToken(): string {
@@ -26,9 +32,21 @@ const FIXTURES: Record<string, URL> = {
 };
 
 const token = loadToken();
+const configPath = writeMcpConfig(PORT, token);
 const wss = new WebSocketServer({ noServer: true });
-const http = createServer((req, res) => {
-  const fixture = FIXTURES[req.url ?? ""];
+
+const http = createServer(async (req, res) => {
+  const url = new URL(req.url ?? "/", `http://${HOST}`);
+
+  if (url.pathname === "/mcp") {
+    if (!authorizeMcp(req.headers.origin, url.searchParams.get("token"), token)) {
+      console.warn(`refused /mcp from origin=${req.headers.origin ?? "(none)"}`);
+      return void res.writeHead(401).end();
+    }
+    return void (await handleMcp(req, res));
+  }
+
+  const fixture = FIXTURES[url.pathname];
   if (!fixture) return void res.writeHead(404).end();
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   res.end(readFileSync(fixture));
@@ -45,8 +63,28 @@ http.on("upgrade", (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
 });
 
+// One task at a time. Two agents driving one tab would fight over every ref.
+let running: ChildProcess | null = null;
+
+function startTask(ws: WebSocket, prompt: unknown) {
+  const send = (event: Record<string, unknown>) => {
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "task-event", event }));
+  };
+  if (typeof prompt !== "string" || !prompt.trim()) return send({ type: "failed", error: "empty prompt" });
+  if (running) return send({ type: "failed", error: "a task is already running — stop it first" });
+
+  console.log(`task: ${prompt}`);
+  running = runClaude(prompt, (event) => {
+    if (event.type === "done" || event.type === "failed") running = null;
+    console.log(`  ${JSON.stringify(event).slice(0, 200)}`);
+    send(event);
+  });
+}
+
 wss.on("connection", (ws) => {
   console.log("panel connected");
+  setPanel(ws);
+
   ws.on("message", (raw) => {
     let msg;
     try {
@@ -55,12 +93,20 @@ wss.on("connection", (ws) => {
       return; // ponytail: malformed frames are dropped, no error channel needed until there is a protocol
     }
     if (msg.type === "ping") ws.send(JSON.stringify({ type: "pong", at: Date.now() }));
+    else if (msg.type === "tool-result") settle(msg);
+    else if (msg.type === "task") startTask(ws, msg.prompt);
+    else if (msg.type === "stop") running?.kill();
   });
-  ws.on("close", () => console.log("panel disconnected"));
+
+  ws.on("close", () => {
+    dropPanel(ws);
+    console.log("panel disconnected");
+  });
 });
 
 http.listen(PORT, HOST, () => {
   console.log(`bridge listening on ws://${HOST}:${PORT}`);
   console.log(`token: ${token}`);
   console.log("paste that into the side panel once; it is stored in chrome.storage.local");
+  console.log(`mcp config for the CLIs: ${configPath}`);
 });

@@ -15,17 +15,6 @@ const KEYSTROKES = FIELDS.reduce((n, [, v]) => n + v.length, 0);
 
 const refFor = (text, role, name) => text.match(new RegExp(`(@\\w+) \\[${role}\\] "${name}"`))?.[1];
 
-function loaded(tabId) {
-  return new Promise((resolve) => {
-    const done = (id, info) => {
-      if (id !== tabId || info.status !== "complete") return;
-      chrome.tabs.onUpdated.removeListener(done);
-      resolve();
-    };
-    chrome.tabs.onUpdated.addListener(done);
-  });
-}
-
 async function throws(fn, needle) {
   try {
     await fn();
@@ -42,12 +31,8 @@ export async function selftest() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("no active tab");
 
-  // Listener first, then navigate — otherwise a fast load fires before we listen.
-  const ready = loaded(tab.id);
-  await chrome.tabs.update(tab.id, { url: FIXTURE });
-  await ready;
-
   if (cdp.state().tabId !== tab.id) await cdp.attach(tab.id);
+  await cdp.navigate(FIXTURE);
 
   let snap = await cdp.snapshot();
   const frames = cdp.state().frames;
@@ -85,7 +70,7 @@ export async function selftest() {
 
   check("unknown ref rejected", await throws(() => cdp.click("@f9e9"), "unknown ref"));
 
-  const reloaded = loaded(tab.id);
+  const reloaded = cdp.loaded(tab.id);
   await chrome.tabs.reload(tab.id);
   await reloaded;
   check("refs go stale on navigation", await throws(() => cdp.click(submit), "stale ref"));

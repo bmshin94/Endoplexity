@@ -16,10 +16,25 @@ export function authorize(
   expected: string,
 ): boolean {
   if (!origin?.startsWith("chrome-extension://")) return false;
-  if (!presented) return false;
+  return sameToken(presented, expected);
+}
 
+export function sameToken(presented: string | null, expected: string): boolean {
+  if (!presented) return false;
   const a = Buffer.from(presented);
   const b = Buffer.from(expected);
   // timingSafeEqual throws on length mismatch, so compare length separately.
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Gate for the MCP endpoint, where the Origin rule is the exact inverse of the
+ * WebSocket's: the only legitimate caller is a CLI we spawned ourselves, and a
+ * CLI never sends Origin. A browser always does on a cross-origin request and
+ * cannot suppress it, so any request carrying one is a web page trying to drive
+ * the tab — refused before the token is even considered.
+ */
+export function authorizeMcp(origin: string | undefined, presented: string | null, expected: string): boolean {
+  if (origin) return false;
+  return sameToken(presented, expected);
 }

@@ -1,12 +1,18 @@
 import * as cdp from "./cdp.js";
 import { selftest } from "./selftest.js";
+import { runTool } from "./tools.js";
 
 const BRIDGE = "ws://127.0.0.1:8787";
 
-// Phase 1 has no model and no panel UI for the tools yet (that is Phase 3), so
-// the hand-run surface is this page's own devtools console: right-click the
-// panel -> Inspect, then `await comet.selftest()`.
-globalThis.comet = { ...cdp, selftest };
+// Phase 2 has no panel UI for tasks yet (that is Phase 3), so the hand-run
+// surface is this page's own devtools console: right-click the panel ->
+// Inspect, then `comet.task("...")` or `await comet.selftest()`.
+globalThis.comet = {
+  ...cdp,
+  selftest,
+  task: (prompt) => send({ type: "task", prompt }),
+  stop: () => send({ type: "stop" }),
+};
 
 const dot = document.getElementById("dot");
 const status = document.getElementById("status");
@@ -27,6 +33,42 @@ function setState(state, text) {
   status.textContent = text;
 }
 
+function send(payload) {
+  if (socket?.readyState !== WebSocket.OPEN) return log("not connected");
+  socket.send(JSON.stringify(payload));
+}
+
+/** Run a tool the bridge asked for and answer it, however it went. */
+async function answer({ id, name, args }) {
+  try {
+    send({ type: "tool-result", id, ok: true, value: await runTool(name, args) });
+  } catch (err) {
+    // Errors go back as results, not thrown away: "stale ref" is the model's cue
+    // to snapshot again, and it can only act on what it is told.
+    log(`${name} failed — ${err.message}`);
+    send({ type: "tool-result", id, ok: false, error: err.message });
+  }
+}
+
+// ponytail: the readable slice of claude's stream-json, not a renderer. Phase 3
+// builds the real step list; until then anything else is noise in a log pane.
+function describe(event) {
+  if (event.type === "assistant") {
+    return (event.message?.content ?? [])
+      .map((part) =>
+        part.type === "tool_use"
+          ? `→ ${part.name.replace("mcp__comet__", "")} ${JSON.stringify(part.input)}`
+          : part.text,
+      )
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (event.type === "result") return event.result ?? `result: ${event.subtype}`;
+  if (event.type === "done") return event.error ? `failed — ${event.error}` : "task finished";
+  if (event.type === "failed") return `failed — ${event.error}`;
+  return null;
+}
+
 function connect(token) {
   socket?.close();
   setState("", "connecting…");
@@ -44,8 +86,13 @@ function connect(token) {
 
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
-    if (msg.type === "pong") log(`pong — round trip ${Date.now() - sentAt}ms`);
-    else log(`< ${event.data}`);
+    if (msg.type === "pong") return log(`pong — round trip ${Date.now() - sentAt}ms`);
+    if (msg.type === "tool") return void answer(msg);
+    if (msg.type === "task-event") {
+      const line = describe(msg.event);
+      return void (line && log(line));
+    }
+    log(`< ${event.data}`);
   };
 
   // A rejected upgrade closes without ever firing onopen, which is what a bad
@@ -70,13 +117,12 @@ document.getElementById("save").addEventListener("click", async () => {
 });
 
 document.getElementById("ping").addEventListener("click", () => {
-  if (socket?.readyState !== WebSocket.OPEN) return log("not connected");
   sentAt = Date.now();
-  socket.send(JSON.stringify({ type: "ping" }));
+  send({ type: "ping" });
   log("ping >");
 });
 
-log("tools on `comet` — selftest, attach, snapshot, click, type, key, state, detach");
+log("`comet.task(\"...\")` to run one, `comet.stop()` to kill it, `comet.selftest()` to check the tools");
 
 const { token } = await chrome.storage.local.get("token");
 if (token) {

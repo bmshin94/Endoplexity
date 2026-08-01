@@ -103,6 +103,29 @@ export async function attach(target) {
   return id;
 }
 
+/** Resolves when the tab finishes loading. Attach the listener BEFORE navigating. */
+export function loaded(id) {
+  return new Promise((resolve) => {
+    const done = (updated, info) => {
+      if (updated !== id || info.status !== "complete") return;
+      chrome.tabs.onUpdated.removeListener(done);
+      resolve();
+    };
+    chrome.tabs.onUpdated.addListener(done);
+  });
+}
+
+/** Point the attached tab at a URL and wait for the load to finish. */
+export async function navigate(url) {
+  requireAttached();
+  // Listener first: a cached page can finish loading before we would hear it.
+  const ready = loaded(tabId);
+  await chrome.tabs.update(tabId, { url });
+  await ready;
+  console.log(`comet: navigated to ${url}`);
+  return `navigated to ${url}`;
+}
+
 export async function detach() {
   if (tabId === null) return;
   const id = tabId;

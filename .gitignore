@@ -1,4 +1,5 @@
 node_modules/
 .comet-token
+.comet-mcp.json
 *.log
 dist/

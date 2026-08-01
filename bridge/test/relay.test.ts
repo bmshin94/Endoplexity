@@ -1,0 +1,56 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { setPanel, dropPanel, settle, callPanel, panelConnected } from "../src/relay.ts";
+
+// Enough of a WebSocket for the relay: it only ever reads readyState and sends.
+function fakePanel() {
+  const sent: Record<string, unknown>[] = [];
+  return { readyState: 1, send: (raw: string) => sent.push(JSON.parse(raw)), sent };
+}
+
+test("routes an answer back to the call that is waiting for it", async () => {
+  const panel = fakePanel();
+  setPanel(panel as never);
+
+  const first = callPanel("snapshot", {});
+  const second = callPanel("click", { ref: "@f1e4" });
+  assert.equal(panel.sent.length, 2);
+
+  // Answered out of order on purpose — ids, not arrival order, decide.
+  settle({ id: panel.sent[1].id as number, ok: true, value: "clicked" });
+  settle({ id: panel.sent[0].id as number, ok: true, value: "the page" });
+
+  assert.equal(await second, "clicked");
+  assert.equal(await first, "the page");
+  dropPanel(panel as never);
+});
+
+test("a tool failure rejects with the panel's own reason", async () => {
+  const panel = fakePanel();
+  setPanel(panel as never);
+  const call = callPanel("click", { ref: "@f9e9" });
+  settle({ id: panel.sent[0].id as number, ok: false, error: "unknown ref @f9e9" });
+  await assert.rejects(call, /unknown ref @f9e9/);
+  dropPanel(panel as never);
+});
+
+test("calls in flight fail when the panel goes away", async () => {
+  const panel = fakePanel();
+  setPanel(panel as never);
+  const call = callPanel("snapshot", {});
+  dropPanel(panel as never);
+  await assert.rejects(call, /disconnected/);
+  assert.equal(panelConnected(), false);
+});
+
+test("refuses to call at all with no panel connected", async () => {
+  await assert.rejects(callPanel("snapshot", {}), /no side panel connected/);
+});
+
+test("ignores an answer to a call that no longer exists", () => {
+  const panel = fakePanel();
+  setPanel(panel as never);
+  // A late reply after a timeout must not throw or resolve anything.
+  assert.doesNotThrow(() => settle({ id: 9999, ok: true, value: "too late" }));
+  dropPanel(panel as never);
+});

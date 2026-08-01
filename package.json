@@ -9,7 +9,9 @@
     "test": "node --test \"bridge/test/**/*.test.ts\""
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ws": "^8.18.0",
+    "zod": "^4.4.3"
   },
   "engines": {
     "node": ">=24"

@@ -15,8 +15,9 @@ npm start                    # prints the token
 npm test
 ```
 Then `chrome://extensions` → Developer mode → Load unpacked → `extension/`, open the
-side panel, paste the token once. Verify with `await comet.selftest()` in the panel's
-devtools console — see `docs/handrun.md`.
+side panel, paste the token once. In the panel's devtools console:
+`await comet.selftest()` checks the tools, `comet.task("…")` runs an agent task.
+See `docs/handrun.md`.
 
 ---
 
@@ -69,12 +70,43 @@ A real Greenhouse form has not been touched yet — the fixture is the only evid
 
 ---
 
-## Current: Phase 2 — MCP server + Claude adapter
+## Current: Phase 2 — MCP server + Claude adapter ⏳ code complete, live gate not run
 
 Bridge serves Streamable HTTP at `/mcp`, relays each tool call over the existing WS to
 the panel, spawns `claude -p` with `--mcp-config` pointing back at itself.
 
-**Done when:** `claude -p "search google for X, open the first result"` completes unattended.
+**Done when:** `comet.task("search google for X, open the first result")` completes unattended.
+
+**Built**
+- `bridge/src/mcp.ts` — 5 tools (`snapshot` `navigate` `click` `type` `key`), stateless
+  Streamable HTTP, a fresh server per request so concurrent calls cannot collide on ids
+- `bridge/src/relay.ts` — id-correlated request/response over the existing WS, 30s timeout,
+  in-flight calls rejected when the panel goes away
+- `bridge/src/claude.ts` — spawn adapter, NDJSON via `readline`, writes `.comet-mcp.json`
+- `extension/tools.js` — tool name → `cdp.*`, auto-attaches to the active tab on first use
+- `extension/cdp.js` — added `navigate` + `loaded`; the self-test now shares them
+- `comet.task("…")` / `comet.stop()` in the panel console; steps land in the panel log
+
+**Verified (run, not assumed)**
+- `npm test` → 16/16
+- curl on `/mcp`: **401 / 401 / 401 / 200** for no-token, wrong-token, right-token-with-Origin,
+  right-token — same shape as the WS gate. `tools/list` returns all 5 schemas
+- A real `claude -p` through the adapter discovered and called `mcp__comet__snapshot`,
+  got the relay's error back, and exited 0
+
+**Two flag bugs found by running it, both fixed**
+1. `--disallowedTools Bash Edit Write Read` (from the design doc) is a **denylist written
+   POSIX-first**. The spawned agent's init event still listed `PowerShell`, `Task`, `Skill`,
+   `WebFetch`, `NotebookEdit` — a shell behind "fill this form". Now `--tools "ToolSearch"`.
+   `--tools ""` is wrong too: MCP tools arrive **deferred** and ToolSearch is the only way
+   to reach them, so with `""` the agent sees no comet tools at all. Confirmed the boundary
+   holds: `ToolSearch` on `select:Bash,PowerShell,Write,Read,Task` returns **0 tools**.
+2. The spawned agent loaded the operator's **global hooks and CLAUDE.md** — 33k tokens of
+   unrelated preamble, $0.41 for a one-tool task. `--setting-sources ""` → $0.02.
+
+**Next session starts here:** restart the bridge (it rewrites `.comet-mcp.json`), reload the
+extension, then `comet.task("...")`. Nothing in the CLI→MCP→WS→CDP path has been run with a
+panel attached yet — the relay has only ever answered "no side panel connected".
 
 ## Remaining phases
 
@@ -126,6 +158,12 @@ Phase 6 is the ship line.
 
 - Bind `127.0.0.1` only
 - Both origin **and** token required on WS upgrade
-- CLIs spawn with `--allowedTools "mcp__comet__*" --disallowedTools Bash Edit Write Read` —
-  otherwise "fill this form" has a shell behind it
-- No `--dangerously-skip-permissions`
+- CLIs spawn with **`--tools "ToolSearch"`**, an allowlist, plus
+  `--allowedTools "mcp__comet__*" --strict-mcp-config --setting-sources ""`.
+  A denylist is not enough and was measured failing — see P2 below
+- `/mcp` requires the token and **refuses any request carrying an `Origin`**: only a
+  CLI we spawned should reach it, and a CLI never sends one
+- The token never goes in argv (process lists are world-readable) — it lives in
+  `.comet-mcp.json`, mode 0600, gitignored
+- No `--dangerously-skip-permissions`, and never `--bare` (it forces
+  `ANTHROPIC_API_KEY` auth, defeating the point of running on a subscription)
