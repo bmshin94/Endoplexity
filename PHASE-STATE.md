@@ -7,61 +7,69 @@ subscriptions** instead of metered API keys. Design doc: `docs/specs/design.md`.
 The bridge exposes browser tools over MCP; the CLIs are the agent loop. The extension
 never talks to a model, the CLI never talks to Chrome.
 
+## Run it
+
+```bash
+npm install
+npm start                    # prints the token
+npm test
+```
+Then `chrome://extensions` → Developer mode → Load unpacked → `extension/`, open the
+side panel, paste the token once. Verify with `await comet.selftest()` in the panel's
+devtools console — see `docs/handrun.md`.
+
 ---
 
-## Current: Phase 0 complete ✅ (2026-07-31)
+## Done
 
-Scaffold + authenticated WebSocket handshake.
+- **P0 — scaffold + authenticated handshake.** Loopback HTTP+WS server, token file
+  bootstrap, upgrade gated on extension origin AND timing-safe token. Verified: 4/4
+  tests, curl showing 401/401/401/101 across the four origin+token combinations,
+  `netstat` confirming no 0.0.0.0 bind, live panel `ping`→`pong` in 11ms.
+
+## Current: Phase 1 — CDP tool layer ✅ code complete (2026-07-31)
+
+Drives the page from `panel.js` via `chrome.debugger`. No model involved.
 
 **Built**
-- `bridge/src/index.ts` — HTTP+WS server, loopback only, token file bootstrap, ping→pong
-- `bridge/src/auth.ts` — upgrade gate (extension origin AND timing-safe token)
-- `extension/` — MV3 manifest, `sw.js` (opens panel on action click), `panel.html` + `panel.js` (WS client, token setup, ping button)
-- `bridge/test/auth.test.ts` — 4 tests
+- `extension/cdp.js` — attach + flat auto-attach (`Target.setAutoAttach{autoAttach,flatten}`),
+  one CDP session per OOPIF, `snapshot` / `click` / `type` / `key`, generation-based stale refs
+- `extension/ax.js` — AX tree → indented text, refs on actionable roles (`@f1e7`),
+  duplicate StaticText dropped, 1000-line cap
+- `extension/selftest.js` — the whole phase gate as one call, `await comet.selftest()`
+- `bridge/test/fixtures/` + a fixture route in `bridge/src/index.ts` — host page on
+  `127.0.0.1` iframing a form on `localhost`, i.e. a real out-of-process frame offline
+- `bridge/test/ax.test.ts` — 4 tests; `docs/handrun.md` — how to run it
 
 **Verified (run, not assumed)**
-- `npm test` → 4/4 pass
-- Upgrade path via curl: web origin + valid token → **401**; extension origin + wrong token → **401**; extension origin + no token → **401**; extension origin + valid token → **101**
-- `netstat` → `TCP 127.0.0.1:8787 LISTENING`, no 0.0.0.0 bind
+- `npm test` → 8/8 pass
+- Fixture routes via curl → `200 text/html` both pages, `404` for `/fixtures/../../package.json`
+  and unknown paths; `http://localhost:8787` does reach the 127.0.0.1-only bind
+- `chrome.debugger` flat sessions confirmed against Chrome docs: `DebuggerSession.sessionId`
+  requires **Chrome 125+**, `onEvent` source carries it
 
-- Live browser round trip: extension loaded unpacked (ID `dcknfpbmkbobhgjfblfmmogochjjkcha`),
-  panel connected, `ping` → `pong` in **11ms**. Confirmed from both sides — panel log and
-  bridge log (`panel connected`, no preceding `refused` line).
-
-**Deviation from the design doc (deliberate)** — the doc says validate the upgrade Origin
-against a specific `chrome-extension://<id>`. Not implemented, and not planned. The token
-already stops every realistic attacker: web pages are blocked by the origin scheme check,
-and other extensions or local processes can forge an Origin header but cannot read
-`.comet-token` off disk. Pinning the ID would add a config knob whose only failure mode is
-a silent refusal when the unpacked folder moves. Revisit only if this is ever packed and
-distributed.
-
-**Known issue (open)** — `.comet-token` is written with `mode: 0o600` but Windows shows
-`-rw-r--r--`; POSIX modes are ignored here, file ACLs govern instead. Low risk on a
-single-user machine. Revisit only if this ever runs on a shared box.
+**Not verified — the live gate is still open.** `comet.selftest()` has never been run.
+Until it prints PASS, these remain assumptions: OOPIF `DOM.getBoxModel` returning
+root-viewport coordinates (the entire input path rests on it), auto-attach reaching
+nested frames, and per-char `Input.dispatchKeyEvent` firing site handlers. A real
+Greenhouse form has not been touched at all.
 
 ---
 
-## Next: Phase 1 — CDP tool layer
+## Next: Phase 2 — MCP server + Claude adapter
 
-Drive the page from `panel.js` via `chrome.debugger`. **No model involved yet.**
+Bridge serves Streamable HTTP at `/mcp`, relays each tool call over the existing WS to
+the panel, spawns `claude -p` with `--mcp-config` pointing back at itself.
 
-Order of work:
-1. `attach(tabId)` + `Target.setAutoAttach({autoAttach:true, flatten:true})` — **do this first**, OOPIF support is not retrofittable
-2. `snapshot` — `Accessibility.getFullAXTree` per frame target, filtered to interactive + text nodes, refs namespaced per frame (`@f1e7`)
-3. `click` / `type` / `key` — `DOM.getBoxModel` → `Input.dispatch*Event` (trusted events so React `onChange` fires)
-4. Stale-ref rejection: refs die on navigation or DOM mutation
+**Done when:** `claude -p "search google for X, open the first result"` completes unattended.
 
-**Done when:** a hand-run script snapshots a real Greenhouse form (form lives in a
-cross-origin iframe), fills 3 fields, clicks — screenshot in this file.
-
----
+Start by running `comet.selftest()` — Phase 2 is built on tools whose live behaviour is
+still unconfirmed.
 
 ## Remaining phases
 
 | # | Deliverable | Done when |
 |---|---|---|
-| 2 | MCP server + Claude adapter | `claude -p "search google for X, open first result"` completes unattended |
 | 3 | Panel UI + live step streaming | Steps render as they happen; Stop kills the child process |
 | 4 | Approval gate | Submit-labelled click blocks in the **bridge**; approve/stop/60s-timeout-deny |
 | 5 | Cursor adapter + model picker | Same task on Grok 4.5 and Composer 2.5 |
@@ -75,24 +83,36 @@ Phase 6 is the ship line.
 ## Decisions locked
 
 - **Side panel + local bridge**, not a Chromium fork and not a separate web UI
-- **`chrome.debugger` from the extension**, not external CDP — no `--remote-debugging-port` relaunch, uses the already-logged-in profile
+- **`chrome.debugger` from the extension**, not external CDP — no `--remote-debugging-port`
+  relaunch, uses the already-logged-in profile
+- **Panel owns the WebSocket and CDP**, not the service worker — full API access, dodges
+  MV3 idle teardown
 - **Auto-run, gate irreversible actions** — gate lives in the bridge, never in a prompt
-- **Panel owns the WebSocket and CDP**, not the service worker — side panels have full API access and dodge MV3 idle teardown
-- **No build step yet** — plain HTML/JS extension. Add Vite + React only if Phase 3 actually needs it.
+- **Input always dispatched to the main session**, never a frame's own: Blink reports OOPIF
+  box models in root-viewport coordinates, so no offset maths
+- **No panel UI for tools until P3** — the console is the hand-run surface
+- **No build step yet** — plain HTML/JS extension. Add Vite + React only if P3 needs it
+- P0: **origin-ID pinning skipped deliberately.** The token already stops every realistic
+  attacker; pinning adds a config knob whose only failure mode is a silent refusal when the
+  unpacked folder moves. Revisit only if this is ever packed and distributed.
+
+## Gotchas
+
+- **Never rotate `.comet-token` without asking.** It appearing in a chat transcript is not
+  a leak worth breaking a configured panel over.
+- Auto-attach also hands you **workers and service workers** — register `type === "iframe"`
+  only, or every snapshot on a real site carries `(frame unavailable)` noise and a worker
+  shutting down invalidates every ref.
+- Pin the ref generation for a whole snapshot; reading the live counter per ref marks early
+  frames stale while blessing later ones.
+- `.comet-token` is written `mode: 0o600` but Windows shows `-rw-r--r--` — POSIX modes are
+  ignored, ACLs govern. Low risk on a single-user machine.
+- Only one debugger per tab: the tab under test must not have its own devtools open.
 
 ## Security invariants (do not regress)
 
 - Bind `127.0.0.1` only
 - Both origin **and** token required on WS upgrade
-- CLIs spawn with `--allowedTools "mcp__comet__*" --disallowedTools Bash Edit Write Read` — otherwise "fill this form" has a shell behind it
+- CLIs spawn with `--allowedTools "mcp__comet__*" --disallowedTools Bash Edit Write Read` —
+  otherwise "fill this form" has a shell behind it
 - No `--dangerously-skip-permissions`
-
-## Run it
-
-```bash
-npm install
-npm start                    # prints the token
-npm test
-```
-Then `chrome://extensions` → Developer mode → Load unpacked → `extension/`, open the
-side panel, paste the token once.

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>OOPIF fixture — host</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 640px; }
+      iframe { width: 100%; height: 340px; border: 1px solid #ccc; border-radius: 6px; }
+      code { background: #eee; padding: 1px 4px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <h1>Apply for this job</h1>
+    <p>
+      The form below is served from <code>localhost</code> while this page is served from
+      <code>127.0.0.1</code>. Different sites, so Chrome puts the frame in its own renderer —
+      the same shape as Greenhouse, Lever and Workday embeds. <code>getFullAXTree</code> on
+      this page returns nothing from inside it.
+    </p>
+
+    <!-- Deliberately NOT same-origin: the src hostname must differ from the one -->
+    <!-- this page was loaded from, or the frame stays in-process and proves nothing. -->
+    <iframe src="http://localhost:8787/fixtures/form.html" title="Application form"></iframe>
+
+    <button id="decoy">Decoy button in the main frame</button>
+  </body>
+</html>

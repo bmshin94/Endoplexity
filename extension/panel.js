@@ -1,4 +1,12 @@
+import * as cdp from "./cdp.js";
+import { selftest } from "./selftest.js";
+
 const BRIDGE = "ws://127.0.0.1:8787";
+
+// Phase 1 has no model and no panel UI for the tools yet (that is Phase 3), so
+// the hand-run surface is this page's own devtools console: right-click the
+// panel -> Inspect, then `await comet.selftest()`.
+globalThis.comet = { ...cdp, selftest };
 
 const dot = document.getElementById("dot");
 const status = document.getElementById("status");
@@ -67,6 +75,8 @@ document.getElementById("ping").addEventListener("click", () => {
   socket.send(JSON.stringify({ type: "ping" }));
   log("ping >");
 });
+
+log("tools on `comet` — selftest, attach, snapshot, click, type, key, state, detach");
 
 const { token } = await chrome.storage.local.get("token");
 if (token) {

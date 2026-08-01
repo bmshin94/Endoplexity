@@ -16,10 +16,22 @@ function loadToken(): string {
   return token;
 }
 
+// Hand-run target for the CDP layer: host.html iframes form.html from the OTHER
+// loopback hostname, which Chrome treats as a different site and puts in its own
+// renderer. That is the Greenhouse/Lever/Workday shape, reproducible offline.
+// An explicit map, not a path join — no traversal to get wrong.
+const FIXTURES: Record<string, URL> = {
+  "/fixtures/host.html": new URL("../test/fixtures/host.html", import.meta.url),
+  "/fixtures/form.html": new URL("../test/fixtures/form.html", import.meta.url),
+};
+
 const token = loadToken();
 const wss = new WebSocketServer({ noServer: true });
-const http = createServer((_req, res) => {
-  res.writeHead(404).end();
+const http = createServer((req, res) => {
+  const fixture = FIXTURES[req.url ?? ""];
+  if (!fixture) return void res.writeHead(404).end();
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(readFileSync(fixture));
 });
 
 http.on("upgrade", (req, socket, head) => {
