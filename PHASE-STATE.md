@@ -24,8 +24,17 @@ Scaffold + authenticated WebSocket handshake.
 - Upgrade path via curl: web origin + valid token → **401**; extension origin + wrong token → **401**; extension origin + no token → **401**; extension origin + valid token → **101**
 - `netstat` → `TCP 127.0.0.1:8787 LISTENING`, no 0.0.0.0 bind
 
-**Not yet verified** — load-unpacked in Chrome and click Ping. Requires a human at the
-browser; bridge half is proven end to end by the curl matrix above.
+**Not yet verified** — extension loads in Chrome (ID `dcknfpbmkbobhgjfblfmmogochjjkcha`,
+confirmed by screenshot) but **no panel has connected to the bridge yet**. The log still
+shows only the curl tests. Phase 0 is not closed until a real `pong` lands.
+
+**Deviation from the design doc (deliberate)** — the doc says validate the upgrade Origin
+against a specific `chrome-extension://<id>`. Not implemented, and not planned. The token
+already stops every realistic attacker: web pages are blocked by the origin scheme check,
+and other extensions or local processes can forge an Origin header but cannot read
+`.comet-token` off disk. Pinning the ID would add a config knob whose only failure mode is
+a silent refusal when the unpacked folder moves. Revisit only if this is ever packed and
+distributed.
 
 **Known issue (open)** — `.comet-token` is written with `mode: 0o600` but Windows shows
 `-rw-r--r--`; POSIX modes are ignored here, file ACLs govern instead. Low risk on a
