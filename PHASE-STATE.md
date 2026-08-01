@@ -70,7 +70,11 @@ A real Greenhouse form has not been touched yet — the fixture is the only evid
 
 ---
 
-## Current: Phase 2 — MCP server + Claude adapter ⏳ code complete, live gate not run
+- **P2 — MCP server + Claude adapter.** Live gate passed 2026-08-01: `comet.task("go to
+  google.com, search for cats, open the first result")` ran unattended, end to end,
+  CLI → MCP → WS → CDP. See below for what it cost and why that is P3's problem.
+
+## Phase 2 — MCP server + Claude adapter ✅
 
 Bridge serves Streamable HTTP at `/mcp`, relays each tool call over the existing WS to
 the panel, spawns `claude -p` with `--mcp-config` pointing back at itself.
@@ -104,15 +108,35 @@ the panel, spawns `claude -p` with `--mcp-config` pointing back at itself.
 2. The spawned agent loaded the operator's **global hooks and CLAUDE.md** — 33k tokens of
    unrelated preamble, $0.41 for a one-tool task. `--setting-sources ""` → $0.02.
 
-**Next session starts here:** restart the bridge (it rewrites `.comet-mcp.json`), reload the
-extension, then `comet.task("...")`. Nothing in the CLI→MCP→WS→CDP path has been run with a
-panel attached yet — the relay has only ever answered "no side panel connected".
+**The first live run failed on a precondition, not the pipeline.** `runTool` auto-attached
+to `chrome.tabs.query({active:true})`, and the panel is normally opened from
+`chrome://extensions` — closed to `chrome.debugger` AND to `tabs.update`, and impossible to
+navigate away from. Attach threw, `tabId` stayed null, so every tool re-attached and failed
+identically with `Cannot access a chrome:// URL`. Never reached CDP. `attach()` now prefers a
+drivable `http(s)|file` tab, then any other in the window, then opens `about:blank`.
+
+**It works and it is too expensive — that is P3's headline, not a footnote.**
+One "search google for cats" run burned ~2% of a session on Sonnet. From the log:
+
+| waste | count | why |
+|---|---|---|
+| `ToolSearch` round trips | 4 | MCP tools arrive **deferred**; each discovery is a whole model turn |
+| full `snapshot` calls | 6 | one after every action, each up to the 1000-line AX cap — this is the bulk of it |
+| dead recovery turns | 3 | Enter did not submit Google's box, clicked the button, gave up and used a `?q=` URL |
+
+The snapshots dominate. Cheapest wins, in order: have `click`/`type`/`key` return the new
+page state so a separate `snapshot` turn is not needed; default to actionable elements only
+with the full tree behind a flag; drop the 1000-line cap hard. All of this lives in
+`ax.js`/`mcp.ts`, i.e. **shared with the Cursor adapter** — fix it once, P5 inherits it.
+
+Also unexplained: `snapshot` returned something the model called unrenderable on
+`en.wikipedia.org/wiki/Cat`, twice. Reproduce before assuming it is cosmetic.
 
 ## Remaining phases
 
 | # | Deliverable | Done when |
 |---|---|---|
-| 3 | Panel UI + live step streaming | Steps render as they happen; Stop kills the child process |
+| 3 | **Token efficiency** + panel UI + live step streaming | Same google task costs **well under half** what it does today, measured the same way; steps render as they happen; Stop kills the child process |
 | 4 | Approval gate | Submit-labelled click blocks in the **bridge**; approve/stop/60s-timeout-deny |
 | 5 | Cursor adapter + model picker | Same task on Grok 4.5 and Composer 2.5 |
 | 6 | **v1 — form-fill hardening** | "Apply with my resume" on **3 real job sites**, incl. upload + multi-page + gated submit |
@@ -150,6 +174,12 @@ Phase 6 is the ship line.
 - `.comet-token` is written `mode: 0o600` but Windows shows `-rw-r--r--` — POSIX modes are
   ignored, ACLs govern. Low risk on a single-user machine.
 - Only one debugger per tab: the tab under test must not have its own devtools open.
+- **Never assume the active tab is drivable.** `chrome://*`, the web store and other
+  extensions reject both `chrome.debugger` and `tabs.update`, and the panel is usually
+  opened from one of them. Cost a whole live run.
+- **Token cost is a design constraint, not a P3 chore.** Every tool return crosses the
+  model's context on every subsequent turn. Anything added to a tool's output is paid for
+  repeatedly, by both CLIs. Measure a task's cost before and after any tool change.
 - A check that asserts on one exact string can't tell "never happened" from "happened
   wrong" — both read as absent. The P1 submit check burned a session on that; it now
   reports what the page actually said.
@@ -159,8 +189,10 @@ Phase 6 is the ship line.
 - Bind `127.0.0.1` only
 - Both origin **and** token required on WS upgrade
 - CLIs spawn with **`--tools "ToolSearch"`**, an allowlist, plus
-  `--allowedTools "mcp__comet__*" --strict-mcp-config --setting-sources ""`.
-  A denylist is not enough and was measured failing — see P2 below
+  `--allowedTools "ToolSearch,mcp__comet__*" --strict-mcp-config --setting-sources ""`.
+  A denylist is not enough and was measured failing — see P2 below.
+  ToolSearch must be in `--allowedTools` too: without it, print mode leaves the
+  tool visible but uncallable and the model emits fake XML tool calls as text.
 - `/mcp` requires the token and **refuses any request carrying an `Origin`**: only a
   CLI we spawned should reach it, and a CLI never sends one
 - The token never goes in argv (process lists are world-readable) — it lives in

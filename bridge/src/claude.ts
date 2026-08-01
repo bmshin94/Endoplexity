@@ -35,8 +35,10 @@ export function writeMcpConfig(port: number, token: string): string {
  *    ToolSearch has to stay: MCP tools arrive deferred, and it is the only way
  *    to reach them. Measured — with `--tools ""` the agent never sees a single
  *    comet tool. It only fetches schemas, so it grants no new reach itself.
- *  - `--allowedTools "mcp__comet__*"` auto-approves the browser tools, which in
- *    print mode would otherwise be denied for want of anyone to ask.
+ *  - `--allowedTools "ToolSearch,mcp__comet__*"` auto-approves both. Print mode
+ *    with only `mcp__comet__*` leaves ToolSearch visible but uncallable — the
+ *    model then pastes fake `<function_calls>` XML as text and exits in one
+ *    turn. Measured 2026-08-01 against claude 2.1.170.
  *  - `--strict-mcp-config` keeps the operator's own MCP servers out of reach.
  *  - `--setting-sources ""` loads no user/project settings, so local hooks and
  *    CLAUDE.md do not end up as context in a browser agent. Worth real money:
@@ -54,6 +56,10 @@ export function runClaude(prompt: string, onEvent: (event: Record<string, unknow
     [
       "-p",
       prompt,
+      // Sonnet by default: browser driving is snapshot-read-click, not hard
+      // reasoning, and the earlier Opus runs billed ~20x for it. P5 adds the picker.
+      "--model",
+      "sonnet",
       "--output-format",
       "stream-json",
       "--verbose", // stream-json refuses to run without it
@@ -66,10 +72,11 @@ export function runClaude(prompt: string, onEvent: (event: Record<string, unknow
       "ToolSearch",
       // Variadic, so it stays last or it swallows whatever follows.
       "--allowedTools",
-      "mcp__comet__*",
+      "ToolSearch,mcp__comet__*",
     ],
     // Somewhere with no CLAUDE.md, belt to --setting-sources' braces.
-    { cwd: tmpdir(), windowsHide: true },
+    // stdin ignored: -p otherwise waits 3s for piped input that never comes.
+    { cwd: tmpdir(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
   );
 
   // readline does the line framing — NDJSON arrives split across chunks.

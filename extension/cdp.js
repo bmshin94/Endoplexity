@@ -85,12 +85,33 @@ function onEvent(source, method, params) {
   }
 }
 
-/** Attach to a tab (defaults to the active one) and wire up OOPIF discovery. */
+// chrome://, the web store and other extensions are closed to chrome.debugger AND
+// to tabs.update, so a tab showing one is a dead end, not a starting point.
+const DRIVABLE = /^(https?|file):/;
+
+/**
+ * The tab to drive when nobody named one.
+ *
+ * The active tab is the obvious guess and the wrong one often enough to matter:
+ * the panel is normally opened from chrome://extensions, which fails every tool
+ * with "Cannot access a chrome:// URL" and cannot even be navigated away from.
+ * Fall back to another drivable tab in the window, and open one if there is none.
+ */
+async function pickTab() {
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  const usable = tabs.find((t) => t.active && DRIVABLE.test(t.url ?? "")) ?? tabs.find((t) => DRIVABLE.test(t.url ?? ""));
+  if (usable) return usable.id;
+  // No wait: about:blank is already loaded, and navigate() waits for its own.
+  const opened = await chrome.tabs.create({ url: "about:blank", active: true });
+  return opened.id;
+}
+
+/** Attach to a tab (defaults to a drivable one) and wire up OOPIF discovery. */
 export async function attach(target) {
   if (tabId !== null) throw new Error(`already attached to tab ${tabId} — detach() first`);
 
-  const id = target ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
-  if (id == null) throw new Error("no active tab");
+  const id = target ?? (await pickTab());
+  if (id == null) throw new Error("no tab to drive");
 
   await chrome.debugger.attach({ tabId: id }, "1.3");
   tabId = id;
