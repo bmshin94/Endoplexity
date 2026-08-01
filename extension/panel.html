@@ -35,7 +35,7 @@
       #dot.up { background: #22c55e; }
       #dot.down { background: #ef4444; }
       #status { font-weight: 400; color: var(--muted); }
-      input, button {
+      input, button, textarea {
         font: inherit;
         padding: 6px 10px;
         border-radius: 6px;
@@ -44,7 +44,11 @@
         color: inherit;
       }
       button { cursor: pointer; }
-      button:hover { background: var(--edge); }
+      button:hover:not(:disabled) { background: var(--edge); }
+      button:disabled { opacity: 0.4; cursor: default; }
+      #prompt { resize: vertical; width: 100%; box-sizing: border-box; }
+      .row { display: flex; gap: 6px; }
+      .row button { flex: 1; }
       #setup { display: none; flex-direction: column; gap: 6px; }
       #setup.show { display: flex; }
       #log {
@@ -69,7 +73,13 @@
       <button id="save">Save &amp; connect</button>
     </div>
 
-    <button id="ping">Ping bridge</button>
+    <textarea id="prompt" rows="2" spellcheck="false"
+      placeholder="go to google.com, search for cats, open the first result"></textarea>
+    <div class="row">
+      <button id="run">Run</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="ping">Ping</button>
+    </div>
     <pre id="log"></pre>
 
     <script type="module" src="panel.js"></script>

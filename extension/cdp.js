@@ -124,15 +124,23 @@ export async function attach(target) {
   return id;
 }
 
-/** Resolves when the tab finishes loading. Attach the listener BEFORE navigating. */
-export function loaded(id) {
+/**
+ * Resolves when the tab finishes loading. Attach the listener BEFORE navigating.
+ * With a timeout it also resolves on giving up — a page holding one analytics
+ * beacon open never reaches `complete`, and a listener left behind would fire on
+ * every tab update for the life of the panel.
+ */
+export function loaded(id, timeoutMs) {
   return new Promise((resolve) => {
-    const done = (updated, info) => {
-      if (updated !== id || info.status !== "complete") return;
+    const finish = () => {
       chrome.tabs.onUpdated.removeListener(done);
       resolve();
     };
+    const done = (updated, info) => {
+      if (updated === id && info.status === "complete") finish();
+    };
     chrome.tabs.onUpdated.addListener(done);
+    if (timeoutMs) setTimeout(finish, timeoutMs);
   });
 }
 
@@ -145,6 +153,23 @@ export async function navigate(url) {
   await ready;
   console.log(`comet: navigated to ${url}`);
   return `navigated to ${url}`;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Let the page finish reacting before it gets read.
+ *
+ * The fixed 300ms covers the common case, a handler that mutates the DOM without
+ * navigating — there is no event for "React finished rendering". If the action
+ * did start a load, wait for that instead, but capped: a page holding one
+ * analytics beacon open stays `loading` indefinitely, and the tool call has its
+ * own 30s deadline in the relay that a hang here would burn.
+ */
+async function settle() {
+  await sleep(300);
+  const tab = await chrome.tabs.get(tabId);
+  if (tab.status === "loading") await loaded(tabId, 10_000);
 }
 
 export async function detach() {
@@ -170,6 +195,16 @@ export async function snapshot(options) {
 
   const out = [];
   for (const [sessionId, frame] of sessions) {
+    // A frame that auto-attached before it had navigated was recorded with an
+    // empty URL, and Page.frameNavigated cannot repair it: inside an OOPIF's own
+    // session that event still carries a parentId, so the handler above skips it.
+    // ponytail: ask once, only when unknown — no cost on the steady-state path,
+    // and a frame that later renavigates keeps a stale but non-empty label, which
+    // is orientation for the model rather than correctness.
+    if (!frame.url) {
+      const info = await send(sessionId, "Target.getTargetInfo").catch(() => null);
+      frame.url = info?.targetInfo?.url ?? "";
+    }
     if (frame.tag !== "f0") out.push(`\n--- frame ${frame.tag} — ${frame.url}`);
     try {
       await send(sessionId, "Accessibility.enable");
@@ -223,8 +258,13 @@ async function centreOf(ref) {
  *
  * Keyboard is the opposite and stays on MAIN: key events follow focus, and the
  * browser routes those into the focused OOPIF widget for us.
+ *
+ * Returns the page as it looks afterwards. A click is the one action that
+ * reliably changes what the agent needs to see next, and asking for that
+ * separately cost a whole model turn — which re-sends the entire conversation,
+ * not just the snapshot. Phase 2 spent six of them on one search.
  */
-export async function click(ref) {
+export async function click(ref, options) {
   const { sessionId } = resolve(ref);
   const { x, y } = await centreOf(ref);
   const base = { x, y, button: "left", clickCount: 1 };
@@ -232,6 +272,8 @@ export async function click(ref) {
   await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mousePressed", buttons: 1 });
   await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mouseReleased", buttons: 0 });
   console.log(`comet: click ${ref} at ${Math.round(x)},${Math.round(y)}`);
+  await settle();
+  return snapshot(options);
 }
 
 /**
@@ -264,8 +306,8 @@ const KEYS = {
   ArrowUp: { windowsVirtualKeyCode: 38, code: "ArrowUp", key: "ArrowUp" },
 };
 
-/** Press a named key at whatever currently has focus. */
-export async function key(name) {
+/** Press a named key at whatever currently has focus. Returns the page after it. */
+export async function key(name, options) {
   requireAttached();
   const spec = KEYS[name];
   if (!spec) throw new Error(`unknown key ${name} — have ${Object.keys(KEYS).join(", ")}`);
@@ -273,6 +315,8 @@ export async function key(name) {
   await send(MAIN, "Input.dispatchKeyEvent", { ...rest, text, type: "keyDown" });
   await send(MAIN, "Input.dispatchKeyEvent", { ...rest, type: "keyUp" });
   console.log(`comet: key ${name}`);
+  await settle();
+  return snapshot(options);
 }
 
 /** What is attached right now — for eyeballing state from the console. */

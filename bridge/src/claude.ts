@@ -7,6 +7,29 @@ import { fileURLToPath } from "node:url";
 const CONFIG_PATH = fileURLToPath(new URL("../../.comet-mcp.json", import.meta.url));
 
 /**
+ * Three habits the Phase 2 run paid for, corrected up front. Each costs ~20
+ * tokens here — cached after the first turn — against a whole model turn each
+ * time it is not said:
+ *
+ *  1. MCP tools arrive deferred, and the agent discovered them one at a time:
+ *     four ToolSearch round trips for five tools. `select:` takes a list.
+ *  2. It snapshotted after every action out of habit. The tools now hand the
+ *     page back themselves, but the tool description alone did not stop it.
+ *  3. It retried the same failing action three times before routing around it.
+ *
+ * Deliberately generic — no site names. A prompt that knows about Google is a
+ * prompt that is wrong on Greenhouse.
+ */
+const BRIEFING = [
+  "You drive a real web browser.",
+  "Load every browser tool in ONE ToolSearch call, query:",
+  "select:mcp__comet__snapshot,mcp__comet__navigate,mcp__comet__click,mcp__comet__type,mcp__comet__key",
+  "navigate, click and key return the page they produced — never call snapshot after them.",
+  "Refs like @f1e7 are only valid on the most recent page you were given.",
+  "If an action did not do what you expected, take a different route rather than repeating it.",
+].join(" ");
+
+/**
  * The token cannot be passed on the command line — argv shows up in any process
  * listing on the machine. It goes in a 0600 file instead, which is also the only
  * form `--mcp-config` needs.
@@ -63,6 +86,8 @@ export function runClaude(prompt: string, onEvent: (event: Record<string, unknow
       "--output-format",
       "stream-json",
       "--verbose", // stream-json refuses to run without it
+      "--append-system-prompt",
+      BRIEFING,
       "--mcp-config",
       CONFIG_PATH,
       "--strict-mcp-config",

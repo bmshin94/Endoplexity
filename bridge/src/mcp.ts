@@ -30,16 +30,21 @@ function build() {
     "snapshot",
     {
       description:
-        "Read the current page as an indented accessibility outline. Actionable elements carry a ref like @f1e7 — pass those to click and type. Refs expire on the next snapshot or any navigation, so call this again after the page changes.",
-      inputSchema: {},
+        "Read the current page as an indented accessibility outline. Actionable elements carry a ref like @f1e7 — pass those to click and type. Refs expire on the next snapshot or any navigation. You rarely need this: navigate, click and key already return the page they produced. Call it to re-read a page nothing has changed, or with full:true for body text.",
+      inputSchema: {
+        full: z
+          .boolean()
+          .optional()
+          .describe("Include body text as well as actionable elements. Much larger — only for reading a page, not acting on it."),
+      },
     },
-    () => relay("snapshot", {}),
+    ({ full }) => relay("snapshot", { full }),
   );
 
   server.registerTool(
     "navigate",
     {
-      description: "Point the tab at a URL and wait for it to finish loading. Call snapshot afterwards to see it.",
+      description: "Point the tab at a URL, wait for the load, and return the loaded page. No snapshot needed afterwards.",
       inputSchema: { url: z.string().url().describe("Absolute URL including the scheme") },
     },
     ({ url }) => relay("navigate", { url }),
@@ -48,7 +53,8 @@ function build() {
   server.registerTool(
     "click",
     {
-      description: "Click an element with a real mouse event. Takes a ref from the most recent snapshot.",
+      description:
+        "Click an element with a real mouse event and return the page as it looks afterwards, with fresh refs. Takes a ref from the most recent snapshot. Do not call snapshot after this.",
       inputSchema: { ref: z.string().describe("A ref from the latest snapshot, e.g. @f1e7") },
     },
     ({ ref }) => relay("click", { ref }),
@@ -58,7 +64,7 @@ function build() {
     "type",
     {
       description:
-        "Focus a field and type into it one real keystroke at a time, so autocompletes and framework handlers fire. Does not clear what is already there.",
+        "Focus a field and type into it one real keystroke at a time, so autocompletes and framework handlers fire. Does not clear what is already there. Returns only an acknowledgement, so fields are cheap to fill in a row — snapshot yourself if typing revealed something new.",
       inputSchema: {
         ref: z.string().describe("A ref from the latest snapshot, e.g. @f1e7"),
         text: z.string(),
@@ -70,7 +76,8 @@ function build() {
   server.registerTool(
     "key",
     {
-      description: "Press a single key at whatever currently has focus, e.g. Enter to submit a search box.",
+      description:
+        "Press a single key at whatever currently has focus, e.g. Enter to submit a search box, and return the page as it looks afterwards. Do not call snapshot after this.",
       inputSchema: { name: z.enum(KEYS) },
     },
     ({ name }) => relay("key", { name }),

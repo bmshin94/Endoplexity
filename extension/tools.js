@@ -6,21 +6,23 @@
 
 import * as cdp from "./cdp.js";
 
+// Anything that moves the page hands back the page, because a separate snapshot
+// call is a whole model turn and a turn re-sends the entire conversation. `type`
+// is the exception on purpose: filling a six-field form must not cost six
+// snapshots, and the page rarely changes between fields. If it does — an
+// autocomplete list, a field that reveals another — the model can still ask.
 const TOOLS = {
-  snapshot: () => cdp.snapshot(),
-  navigate: ({ url }) => cdp.navigate(url),
-  click: async ({ ref }) => {
-    await cdp.click(ref);
-    return `clicked ${ref} — the page may have changed, snapshot again before using older refs`;
+  snapshot: ({ full }) => cdp.snapshot({ full }),
+  navigate: async ({ url }) => {
+    await cdp.navigate(url);
+    return cdp.snapshot();
   },
+  click: ({ ref }) => cdp.click(ref),
   type: async ({ ref, text }) => {
     await cdp.type(ref, text);
     return `typed ${text.length} characters into ${ref}`;
   },
-  key: async ({ name }) => {
-    await cdp.key(name);
-    return `pressed ${name}`;
-  },
+  key: ({ name }) => cdp.key(name),
 };
 
 export async function runTool(name, args) {

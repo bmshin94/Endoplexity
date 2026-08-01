@@ -1,7 +1,9 @@
-# Verifying the CDP tools (Phase 1)
+# Verifying it by hand
 
-No model and no panel UI yet — Phase 2 wires MCP, Phase 3 builds the UI. Until
-then the tools live on `comet` in the side panel's own devtools console.
+Tasks have a panel UI as of Phase 3 — type one in the box and hit **Run**, watch
+the steps land in the log, **Stop** kills the agent. The `comet` object stays on
+the panel's own devtools console because that is still the only way to reach the
+CDP layer directly.
 
 ## The check
 
@@ -9,8 +11,12 @@ then the tools live on `comet` in the side panel's own devtools console.
 panel, right-click inside it → **Inspect**, and paste:
 
 ```js
-await comet.selftest()
+await comet.selftest(); await comet.measure()
 ```
+
+`selftest()` is the tool gate; `measure()` is the Phase 3 one — it snapshots a
+real page the way Phase 2 serialized it and the way it does now, and prints the
+ratio. No agent run, so it costs nothing.
 
 It navigates the active tab to the OOPIF fixture itself and prints PASS/FAIL per
 check. Nothing to open, nothing to compare by eye.
@@ -36,15 +42,22 @@ attach at a time. The panel's inspector is a different target, so it is fine.
 ## Driving it by hand
 
 ```js
-await comet.attach();                    // active tab, or attach(tabId)
-comet.state();                           // attached frames + live ref count
-console.log(await comet.snapshot());     // @f0e1 [button] "…", refs per frame
+await comet.attach();                          // a drivable tab, or attach(tabId)
+comet.state();                                 // attached frames + live ref count
+console.log(await comet.snapshot());           // @f0e1 [button] "…", refs per frame
+console.log(await comet.snapshot({full:true})); // …plus body text
 await comet.type("@f1e1", "Ada");
-await comet.click("@f1e4");
-await comet.key("Enter");
+console.log(await comet.click("@f1e4"));       // returns the page it produced
+console.log(await comet.key("Enter"));         // so does this
 ```
 
-Refs are `@f<frame>e<n>` and die on the next `snapshot()` or any navigation.
+Refs are `@f<frame>e<n>` and die on the next `snapshot()` or any navigation —
+including the snapshot `click` and `key` take on their way out, so always act on
+the refs from the page the last action handed back.
+
+Snapshots list actionable elements only. Body text costs the agent on every turn
+after it is read, so reading tasks pass `full: true` rather than everything
+paying for it by default.
 
 ## On a real job site
 

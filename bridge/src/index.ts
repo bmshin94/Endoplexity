@@ -76,6 +76,12 @@ function startTask(ws: WebSocket, prompt: unknown) {
   console.log(`task: ${prompt}`);
   running = runClaude(prompt, (event) => {
     if (event.type === "done" || event.type === "failed") running = null;
+    // Untruncated, because this is the one line that settles "did the agent
+    // actually have the tools" — a model that emits fake <function_calls> XML as
+    // text looks identical in the panel to one whose tools are missing.
+    if (event.type === "system" && event.subtype === "init") {
+      console.log(`  tools: ${JSON.stringify(event.tools)}`);
+    }
     console.log(`  ${JSON.stringify(event).slice(0, 200)}`);
     send(event);
   });

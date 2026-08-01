@@ -67,6 +67,25 @@ test("walks through ignored wrappers but drops text the control already announce
   assert.equal(text.match(/Apply for this job/g)?.length, 1);
 });
 
+// The Phase 3 gate in one test: body prose was the bulk of every snapshot and
+// almost none of what the agent needed to act, since links and buttons carry
+// their own labels. Reading tasks ask for it; acting ones no longer pay for it.
+test("body prose is dropped by default and comes back with full", () => {
+  const page = [
+    node("1", "RootWebArea", { name: "Cat", childIds: ["2", "3", "4"] }),
+    node("2", "heading", { name: "Cat" }),
+    node("3", "StaticText", { name: "The cat is a small domesticated carnivore." }),
+    node("4", "link", { name: "Read more", backendDOMNodeId: 7 }),
+  ];
+
+  const lean = serialize(page, "f0").text;
+  assert.doesNotMatch(lean, /domesticated/); // the expensive half
+  assert.match(lean, /\[heading\] "Cat"/); // orientation stays
+  assert.match(lean, /@f0e1 \[link\] "Read more"/); // and everything actionable
+
+  assert.match(serialize(page, "f0", { full: true }).text, /domesticated/);
+});
+
 test("caps the payload and says how much it hid", () => {
   const many = [
     node("1", "RootWebArea", { childIds: Array.from({ length: 50 }, (_, i) => `b${i}`) }),
