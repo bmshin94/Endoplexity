@@ -48,11 +48,28 @@ Drives the page from `panel.js` via `chrome.debugger`. No model involved.
 - `chrome.debugger` flat sessions confirmed against Chrome docs: `DebuggerSession.sessionId`
   requires **Chrome 125+**, `onEvent` source carries it
 
-**Not verified — the live gate is still open.** `comet.selftest()` has never been run.
-Until it prints PASS, these remain assumptions: OOPIF `DOM.getBoxModel` returning
-root-viewport coordinates (the entire input path rests on it), auto-attach reaching
-nested frames, and per-char `Input.dispatchKeyEvent` firing site handlers. A real
-Greenhouse form has not been touched at all.
+**Live gate run: 6/7 PASS, one real bug.** PASS on OOPIF auto-attach, fields found,
+fields in a child frame not f0, typed values landed, unknown ref rejected, refs go
+stale on navigation. FAIL on `trusted keystrokes reached the cross-origin form`.
+
+**The bug — OOPIF click coordinates are frame-relative, not root-viewport.**
+`click @f1e4 at 79,197`, but the iframe does not start until y≈250 in the host page,
+so no element inside it can be at root y=197. 197 is where the submit button sits in
+the *frame's own* space (16px body margin + three label/input pairs). So the click
+landed on the host page's paragraph and the form never submitted. `type` passed
+because `DOM.focus` takes a backendNodeId and needs no coordinates — only the
+coordinate path is broken. Assumption recorded under Decisions was wrong.
+
+**Fix next session**, in order of preference:
+1. Dispatch `Input.*` to the **element's own session** instead of MAIN, so the
+   coordinates and the widget receiving them share one space. Confirm CDP allows
+   the Input domain on an iframe target first — if it does this is a one-line fix.
+2. Otherwise walk up the frame chain adding offsets: `DOM.getFrameOwner({frameId})`
+   in the parent session → `DOM.getBoxModel` on that iframe element → add to the
+   child's coordinates, recursing for nested frames. This is what Playwright does.
+
+Then re-run `await comet.selftest()` — one paste, expects 7/7. A real Greenhouse
+form has not been touched yet.
 
 ---
 
@@ -88,8 +105,9 @@ Phase 6 is the ship line.
 - **Panel owns the WebSocket and CDP**, not the service worker — full API access, dodges
   MV3 idle teardown
 - **Auto-run, gate irreversible actions** — gate lives in the bridge, never in a prompt
-- **Input always dispatched to the main session**, never a frame's own: Blink reports OOPIF
-  box models in root-viewport coordinates, so no offset maths
+- ~~Input always dispatched to the main session; OOPIF box models come back in
+  root-viewport coordinates~~ — **disproven by the P1 self-test, see the bug above.**
+  They are frame-relative and need either a frame-local dispatch or offset maths
 - **No panel UI for tools until P3** — the console is the hand-run surface
 - **No build step yet** — plain HTML/JS extension. Add Vite + React only if P3 needs it
 - P0: **origin-ID pinning skipped deliberately.** The token already stops every realistic
