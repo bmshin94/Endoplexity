@@ -25,8 +25,10 @@ function connect(token) {
 
   const ws = new WebSocket(`${BRIDGE}?token=${encodeURIComponent(token)}`);
   socket = ws;
+  let opened = false;
 
   ws.onopen = () => {
+    opened = true;
     setState("up", "connected");
     setup.classList.remove("show");
     log("connected to bridge");
@@ -41,12 +43,13 @@ function connect(token) {
   // A rejected upgrade closes without ever firing onopen, which is what a bad
   // token looks like from here — the browser hides the 401 from page script.
   ws.onclose = () => {
-    setState("down", ws === socket && logEl.textContent.includes("connected") ? "disconnected" : "refused");
-    if (!logEl.textContent.includes("connected")) {
+    if (ws !== socket) return; // superseded by a newer connect()
+    setState("down", opened ? "disconnected" : "refused");
+    if (opened) {
+      log("disconnected");
+    } else {
       log("refused — is the bridge running, and is the token right?");
       setup.classList.add("show");
-    } else {
-      log("disconnected");
     }
   };
 }

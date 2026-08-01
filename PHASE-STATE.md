@@ -24,9 +24,9 @@ Scaffold + authenticated WebSocket handshake.
 - Upgrade path via curl: web origin + valid token → **401**; extension origin + wrong token → **401**; extension origin + no token → **401**; extension origin + valid token → **101**
 - `netstat` → `TCP 127.0.0.1:8787 LISTENING`, no 0.0.0.0 bind
 
-**Not yet verified** — extension loads in Chrome (ID `dcknfpbmkbobhgjfblfmmogochjjkcha`,
-confirmed by screenshot) but **no panel has connected to the bridge yet**. The log still
-shows only the curl tests. Phase 0 is not closed until a real `pong` lands.
+- Live browser round trip: extension loaded unpacked (ID `dcknfpbmkbobhgjfblfmmogochjjkcha`),
+  panel connected, `ping` → `pong` in **11ms**. Confirmed from both sides — panel log and
+  bridge log (`panel connected`, no preceding `refused` line).
 
 **Deviation from the design doc (deliberate)** — the doc says validate the upgrade Origin
 against a specific `chrome-extension://<id>`. Not implemented, and not planned. The token
