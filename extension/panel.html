@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>CometClone</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --edge: color-mix(in srgb, currentColor 15%, transparent);
+        --muted: color-mix(in srgb, currentColor 60%, transparent);
+      }
+      body {
+        margin: 0;
+        padding: 12px;
+        font: 13px/1.5 system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        height: 100vh;
+        box-sizing: border-box;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+      }
+      #dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #999;
+        flex: none;
+      }
+      #dot.up { background: #22c55e; }
+      #dot.down { background: #ef4444; }
+      #status { font-weight: 400; color: var(--muted); }
+      input, button {
+        font: inherit;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--edge);
+        background: transparent;
+        color: inherit;
+      }
+      button { cursor: pointer; }
+      button:hover { background: var(--edge); }
+      #setup { display: none; flex-direction: column; gap: 6px; }
+      #setup.show { display: flex; }
+      #log {
+        flex: 1;
+        overflow-y: auto;
+        margin: 0;
+        padding: 8px;
+        border: 1px solid var(--edge);
+        border-radius: 6px;
+        white-space: pre-wrap;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header><span id="dot"></span>CometClone <span id="status">starting…</span></header>
+
+    <div id="setup">
+      <label for="token">Paste the token printed by <code>npm start</code>:</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" />
+      <button id="save">Save &amp; connect</button>
+    </div>
+
+    <button id="ping">Ping bridge</button>
+    <pre id="log"></pre>
+
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

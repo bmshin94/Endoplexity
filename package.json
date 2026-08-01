@@ -1,0 +1,17 @@
+{
+  "name": "cometclone",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Agentic browser control driven by your own Claude / Cursor subscriptions",
+  "scripts": {
+    "start": "node bridge/src/index.ts",
+    "test": "node --test \"bridge/test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

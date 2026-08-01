@@ -1,0 +1,4 @@
+node_modules/
+.comet-token
+*.log
+dist/
