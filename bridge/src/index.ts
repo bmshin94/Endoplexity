@@ -6,7 +6,7 @@ import type { ChildProcess } from "node:child_process";
 import { WebSocketServer, type WebSocket } from "ws";
 import { authorize, authorizeMcp } from "./auth.ts";
 import { handleMcp } from "./mcp.ts";
-import { setPanel, dropPanel, settle } from "./relay.ts";
+import { setPanel, dropPanel, settle, settleGate } from "./relay.ts";
 import { runClaude, writeMcpConfig } from "./claude.ts";
 
 const HOST = "127.0.0.1"; // never 0.0.0.0 — this socket can drive a logged-in browser
@@ -66,7 +66,23 @@ http.on("upgrade", (req, socket, head) => {
 // One task at a time. Two agents driving one tab would fight over every ref.
 let running: ChildProcess | null = null;
 
-function startTask(ws: WebSocket, prompt: unknown) {
+// Twice now the agent has written its tool calls out as XML text instead of
+// calling anything: one turn, zero real calls, then a confident report of a
+// browser session that never happened. Both times the init event listed the
+// tools, and the fake calls invented parameter names the real schemas do not
+// have — so ToolSearch never returned and this is model-side, not config.
+// Nothing in a prompt has fixed it; one respawn costs ~$0.05 and has recovered
+// every time. The run is swallowed rather than shown: a hallucinated browser
+// session in the log is worse than no log at all.
+const FAKE_XML = /<function_calls>|<invoke name=/;
+
+const usedTools = (event: Record<string, unknown>) =>
+  event.type === "assistant" &&
+  ((event.message as { content?: { type?: string }[] } | undefined)?.content ?? []).some(
+    (part) => part.type === "tool_use",
+  );
+
+function startTask(ws: WebSocket, prompt: unknown, isRetry = false) {
   const send = (event: Record<string, unknown>) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "task-event", event }));
   };
@@ -74,7 +90,13 @@ function startTask(ws: WebSocket, prompt: unknown) {
   if (running) return send({ type: "failed", error: "a task is already running — stop it first" });
 
   console.log(`task: ${prompt}`);
+  let sawTool = false;
+  let redo = false;
   running = runClaude(prompt, (event) => {
+    if (usedTools(event)) sawTool = true;
+    // Only worth retrying a run that did nothing: once a real tool call has
+    // landed, the same text pattern is the agent quoting itself, not faking.
+    if (event.type === "result" && !sawTool && !isRetry && FAKE_XML.test(JSON.stringify(event))) redo = true;
     if (event.type === "done" || event.type === "failed") running = null;
     // Untruncated, because this is the one line that settles "did the agent
     // actually have the tools" — a model that emits fake <function_calls> XML as
@@ -83,7 +105,14 @@ function startTask(ws: WebSocket, prompt: unknown) {
       console.log(`  tools: ${JSON.stringify(event.tools)}`);
     }
     console.log(`  ${JSON.stringify(event).slice(0, 200)}`);
-    send(event);
+
+    if (!redo) return send(event);
+    // Swallow the void run entirely, then respawn once the child is actually
+    // gone. The panel stays busy throughout, so this reads as one slow task.
+    if (event.type === "done" || event.type === "failed") {
+      send({ type: "retry", reason: "the agent wrote its tool calls as text instead of calling them — retrying once" });
+      startTask(ws, prompt, true);
+    }
   });
 }
 
@@ -100,6 +129,7 @@ wss.on("connection", (ws) => {
     }
     if (msg.type === "ping") ws.send(JSON.stringify({ type: "pong", at: Date.now() }));
     else if (msg.type === "tool-result") settle(msg);
+    else if (msg.type === "gate-reply") settleGate(msg);
     else if (msg.type === "task") startTask(ws, msg.prompt);
     else if (msg.type === "stop") running?.kill();
   });

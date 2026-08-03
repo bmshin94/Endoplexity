@@ -27,9 +27,17 @@ const logEl = document.getElementById("log");
 const promptEl = document.getElementById("prompt");
 const runBtn = document.getElementById("run");
 const stopBtn = document.getElementById("stop");
+const gate = document.getElementById("gate");
+const gateAction = document.getElementById("gate-action");
+const gateApprove = document.getElementById("gate-approve");
+const gateDeny = document.getElementById("gate-deny");
 
 let socket = null;
 let sentAt = 0;
+// The bridge holds one task at a time, so at most one gate is ever open. Tracking
+// its id (not just a boolean) lets a stale button click be told apart from a
+// still-live one if a row somehow outlives its gate.
+let pendingGateId = null;
 
 function log(line) {
   logEl.textContent += `${new Date().toLocaleTimeString()}  ${line}\n`;
@@ -50,6 +58,31 @@ function send(payload) {
   socket.send(JSON.stringify(payload));
   return true;
 }
+
+function showGate({ id, action }) {
+  pendingGateId = id;
+  gateAction.textContent = action;
+  gate.classList.add("show");
+}
+
+function hideGate() {
+  pendingGateId = null;
+  gate.classList.remove("show");
+}
+
+/** Approve/Deny share this — only the boolean differs. */
+function replyGate(approved) {
+  // A click can still land after the row is hidden (double-click, or the task
+  // ended first) — with no pending id there is nothing left to resolve.
+  if (pendingGateId === null) return;
+  const action = gateAction.textContent;
+  send({ type: "gate-reply", id: pendingGateId, approved });
+  hideGate();
+  log(`${approved ? "approved" : "denied"} — ${action}`);
+}
+
+gateApprove.addEventListener("click", () => replyGate(true));
+gateDeny.addEventListener("click", () => replyGate(false));
 
 /** Run a tool the bridge asked for and answer it, however it went. */
 async function answer({ id, name, args }) {
@@ -91,6 +124,12 @@ function describe(event) {
       .filter(Boolean)
       .join("\n");
   }
+  // The bridge terminal already prints this, but a fake-<function_calls> run is
+  // diagnosed from the panel log — so the evidence has to be in the same paste.
+  if (event.type === "system" && event.subtype === "init") {
+    return `tools: ${(event.tools ?? []).join(", ") || "(none)"}`;
+  }
+  if (event.type === "retry") return `↻ ${event.reason}`;
   if (event.type === "result") return `${event.result ?? event.subtype}\n${cost(event)}`;
   if (event.type === "done") return event.error ? `failed — ${event.error}` : "task finished";
   if (event.type === "failed") return `failed — ${event.error}`;
@@ -116,9 +155,22 @@ function connect(token) {
     const msg = JSON.parse(event.data);
     if (msg.type === "pong") return log(`pong — round trip ${Date.now() - sentAt}ms`);
     if (msg.type === "tool") return void answer(msg);
+    if (msg.type === "gate") {
+      showGate(msg);
+      return log(`? approval requested — ${msg.action}`);
+    }
     if (msg.type === "task-event") {
       // "done" is the child exiting, however it went — including a Stop.
-      if (msg.event.type === "done" || msg.event.type === "failed") setBusy(false);
+      if (msg.event.type === "done" || msg.event.type === "failed") {
+        setBusy(false);
+        // The bridge only denies-and-moves-on after its own 60s timeout, but the
+        // task can also end on its own first (Stop, crash) — either way the row
+        // must not sit there looking answerable once nothing is listening.
+        if (pendingGateId !== null) {
+          hideGate();
+          log("gate unanswered — bridge denied it when the task ended");
+        }
+      }
       const line = describe(msg.event);
       return void (line && log(line));
     }

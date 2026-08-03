@@ -8,6 +8,7 @@
         color-scheme: light dark;
         --edge: color-mix(in srgb, currentColor 15%, transparent);
         --muted: color-mix(in srgb, currentColor 60%, transparent);
+        --accent: #f59e0b;
       }
       body {
         margin: 0;
@@ -51,6 +52,17 @@
       .row button { flex: 1; }
       #setup { display: none; flex-direction: column; gap: 6px; }
       #setup.show { display: flex; }
+      #gate {
+        display: none;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--accent) 15%, transparent);
+      }
+      #gate.show { display: flex; }
+      #gate-action { font-family: ui-monospace, monospace; font-size: 12px; }
       #log {
         flex: 1;
         overflow-y: auto;
@@ -79,6 +91,14 @@
       <button id="run">Run</button>
       <button id="stop" disabled>Stop</button>
       <button id="ping">Ping</button>
+    </div>
+    <div id="gate">
+      <strong>Approval needed</strong>
+      <div id="gate-action"></div>
+      <div class="row">
+        <button id="gate-approve">Approve</button>
+        <button id="gate-deny">Deny</button>
+      </div>
     </div>
     <pre id="log"></pre>
 

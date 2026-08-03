@@ -43,7 +43,12 @@ const LEAN_PROSE = new Set(["heading", "Iframe"]);
 
 const FLAGS = new Set(["required", "disabled", "checked", "expanded", "selected", "invalid"]);
 
-const clean = (s) => (s ?? "").replace(/\s+/g, " ").trim();
+// AXValue is not always a string: sliders, spinbuttons and progressbars carry
+// numbers, tristates carry booleans. `.replace` on those throws, and since every
+// action returns the page, one such node on the page breaks every tool call.
+// ponytail: String() also stringifies nodeList/idref values to "[object Object]".
+// Ugly, never fatal — give those a real rendering when a page needs it.
+const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 
 function flagsOf(node) {
   const on = [];

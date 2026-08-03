@@ -9,7 +9,7 @@ const node = (
   role: string,
   extra: {
     name?: string;
-    value?: string;
+    value?: unknown;
     backendDOMNodeId?: number;
     childIds?: string[];
     ignored?: boolean;
@@ -84,6 +84,20 @@ test("body prose is dropped by default and comes back with full", () => {
   assert.match(lean, /@f0e1 \[link\] "Read more"/); // and everything actionable
 
   assert.match(serialize(page, "f0", { full: true }).text, /domesticated/);
+});
+
+// A live run died here: one slider on the page threw out of clean(), and since
+// click/navigate/key all return the page, every action after it read as a failed
+// action. The agent spent 19 turns and $0.22 concluding the browser was broken.
+test("survives non-string AX values", () => {
+  const page = [
+    node("1", "RootWebArea", { name: "Cat", childIds: ["2", "3"] }),
+    node("2", "slider", { name: "Volume", value: 0.5, backendDOMNodeId: 7 }),
+    node("3", "checkbox", { name: "Mute", value: true, backendDOMNodeId: 8 }),
+  ];
+  const { text } = serialize(page, "f0");
+  assert.match(text, /@f0e1 \[slider\] "Volume" = "0\.5"/);
+  assert.match(text, /@f0e2 \[checkbox\] "Mute" = "true"/);
 });
 
 test("caps the payload and says how much it hid", () => {

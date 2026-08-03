@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { callPanel } from "./relay.ts";
+import { callPanel, askPanel } from "./relay.ts";
+import { check, remember } from "./gate.ts";
 
 /**
  * The browser tools, written once. Both CLIs speak MCP, so Phase 5 gets these
@@ -15,13 +16,31 @@ import { callPanel } from "./relay.ts";
 // guessing "Return" is corrected by the schema instead of failing at the panel.
 const KEYS = ["Enter", "Tab", "Escape", "Backspace", "ArrowDown", "ArrowUp"] as const;
 
-// A tool failure the model can read is worth more than a dead turn: "stale ref"
-// tells it to snapshot again, which is exactly the recovery we want.
-const relay = (name: string, args: Record<string, unknown>) =>
-  callPanel(name, args).then(
-    (text) => ({ content: [{ type: "text" as const, text }] }),
-    (err: Error) => ({ content: [{ type: "text" as const, text: `error: ${err.message}` }], isError: true }),
-  );
+// The denial has to read like a tool result, not a crash — the model retried
+// stale refs and slider-shaped errors fine before this, so it needs the same
+// kind of plain-English steer here, telling it to stop rather than route around.
+const DENIED = "blocked — the human denied this action. Do not retry it; stop and report what you were about to do.";
+
+// The one chokepoint every tool call passes through, so the gate never has to
+// be wired into five separate handlers: check the policy, ask the human if it
+// says so, then relay to the panel. A tool failure the model can read is worth
+// more than a dead turn: "stale ref" tells it to snapshot again, which is
+// exactly the recovery we want — and a denial has to read the same way.
+// Exported for gate.test.ts, which drives it directly rather than standing up
+// a real MCP HTTP round trip just to see the isError shape.
+export async function relay(name: string, args: Record<string, unknown>) {
+  const needs = check(name, args);
+  if (needs && !(await askPanel(needs))) {
+    return { content: [{ type: "text" as const, text: DENIED }], isError: true };
+  }
+  try {
+    const text = await callPanel(name, args);
+    remember(text);
+    return { content: [{ type: "text" as const, text }] };
+  } catch (err) {
+    return { content: [{ type: "text" as const, text: `error: ${(err as Error).message}` }], isError: true };
+  }
+}
 
 function build() {
   const server = new McpServer({ name: "comet", version: "0.1.0" });

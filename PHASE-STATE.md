@@ -36,51 +36,53 @@ See `docs/handrun.md`.
   2026-08-01: `comet.task("search google for cats, open the first result")` ran unattended
   end to end. curl on `/mcp`: 401/401/401/200, same gate shape as the WS upgrade.
 
-- **P3 — token efficiency + panel UI.** Code complete 2026-08-01. **Live cost gate open.**
+- **P3 — token efficiency + panel UI.** Snapshots default to actionable + headings
+  (`full: true` restores prose, cap 300); `navigate`/`click`/`key` return the page they
+  produced while `type` stays a cheap ack; one ToolSearch call loads all five tools; panel
+  gained the task box, Run/Stop and a cost line. Verified 2026-08-03: `npm test` 20/20,
+  `selftest()` **7/7**, one clean unattended google run at **$0.0984 / 111,872 tokens /
+  9 turns**, containing a **single** snapshot — the P2 design would have fired ~5 more.
+  "Well under half of P2" is **unmeasurable, not passed**: no P2 cost was ever recorded.
+  Record the number next time. Prose-cutting alone was **1.5x, not 2x** — lines halved,
+  tokens did not, because the actionable lines that survive are the long ones.
 
-## Phase 3 — where it actually stands
+- **P4 — approval gate.** `bridge/src/gate.ts` is the policy and the only place that decides:
+  `remember()` builds a ref → label map from the page text the bridge is **already relaying**
+  (`@f0e38 [button] "Submit Application"` is right there — no extra round trip, no panel say
+  in it), `check()` gates `click` only, on a word-boundary label match. `relay.ts` carries it
+  — `askPanel`/`settleGate`, own id sequence; 60s silence denies, no panel denies, a panel
+  that drops mid-gate denies. `mcp.ts`'s `relay()` is the single chokepoint, so the gate
+  cannot end up half-wired across five handlers. `index.ts` also swallows a fake-XML run and
+  respawns once. Verified live 2026-08-03 on the OOPIF fixture: **approve** → the page's own
+  "submitted after 36 keydowns" ($0.0438 / 8 turns), **deny** → the agent stopped and
+  reported instead of routing around ($0.0347 / 7 turns). `npm test` **26/26**, and the gate
+  tests build their input from the real `serialize()` so an ax.js format drift fails the test
+  instead of silently disabling the gate.
 
-**Built**
-- `ax.js` — snapshot defaults to actionable + headings; `full: true` restores body prose;
-  cap 1000 → 300 lines; 1-space indent
-- `cdp.js` — `settle()` (300ms, then wait out a load, capped at 10s); `click`/`key` return
-  the page they produced; `loaded()` takes a timeout and removes its own listener
-- `tools.js` — `navigate`/`click`/`key` hand back the page; `type` stays a cheap ack, or a
-  six-field form would cost six snapshots
-- `claude.ts` — `--append-system-prompt`: one ToolSearch call for all five tools, no
-  snapshot after an action, do not retry an action that already failed
-- `panel.html`/`panel.js` — task box, Run/Stop, cost line on every result, log is the step
-  stream; `selftest.js` gained `measure()`
+## Current phase: 5 — Cursor adapter + model picker
 
-**Verified (run, not assumed)**
-- `npm test` → **19/19** (the old "16/16" was stale; commit 0dd3061 had added two)
-- `/mcp` `tools/list` → 200, five tools, `snapshot` carries `full`
-- ToolSearch round trips **4 → 1**, measured through the real `runClaude()` spawn against a
-  panel-less bridge: 3 turns, `["ToolSearch","mcp__comet__navigate"]`, no fake XML, $0.0321
-- Snapshot size on a live google SERP via `comet.measure()`: 404 lines/~3783 tokens →
-  203 lines/~2445 tokens = **1.5x, not the 2x the plan assumed.** Lines halved, tokens did
-  not: the actionable lines that survive are long, the dropped StaticText ones were short
+Done when the same task runs on Grok 4.5 and Composer 2.5 through `cursor-agent -p`.
+`cursor-agent` is **not installed yet**: install it and confirm Windows support BEFORE
+writing code against it (`docs/specs/design.md:121`). If Windows support turns out to be
+missing, Claude-only still ships everything through P6 and the panel hides the option.
+`mcp.ts` must stay CLI-agnostic — it already is, which is what makes this phase small.
 
-**Open — this is what closes P3**
-1. One clean `comet.task("go to google.com, search for cats, open the first result")` and
-   its cost line. Prose-cutting alone does **not** reach "well under half" — the gate now
-   rests on deleting 6 snapshot turns, and a turn re-sends the entire conversation.
-2. `selftest()` back to **7/7**. Last live run was 6/7: OOPIF frame URL empty, because
-   selftest now starts from `about:blank` so the iframe auto-attaches before it has a URL,
-   and `Page.frameNavigated` cannot repair it (inside an OOPIF's own session that event
-   still carries a `parentId`). Fixed by asking `Target.getTargetInfo` once when a frame's
-   URL is unknown — **fix is untested live.**
-3. **One unexplained run.** The agent emitted fake `<function_calls>` XML as text, 1 turn,
-   zero real tool calls, then hallucinated an entire browser session. Not reproduced in
-   three runs of the identical spawn path — same binary (2.1.170), same flags, briefing
-   confirmed present by file mtime vs bridge start time. The bridge now prints the init
-   event's `tools:` list untruncated, which settles it in one shot if it recurs.
+## Carried forward — still open
+
+- **`key: Enter` bypasses the gate.** A focused form submits on Enter with no click, and the
+  bridge cannot see what has focus. Deliberately out of P4's scope ("submit-labelled click"),
+  and P6's done-when already says gated submit — solve it there against real sites.
+
+- **Stale refs are the top cost sink**, ahead of snapshot bloat: 4 of the 9 turns in the P3
+  closing run went to `click` → stale → `snapshot` → `click` → "isn't navigating" → gave up
+  and navigated directly. A live google SERP keeps mutating after `settle()` returns, so a
+  ref can be dead the moment it is handed out. Whether the second click failed for the same
+  reason or hit the new-tab gotcha is undiagnosed — needs one instrumented run.
 
 ## Remaining phases
 
 | # | Deliverable | Done when |
 |---|---|---|
-| 4 | Approval gate | Submit-labelled click blocks in the **bridge**; approve/stop/60s-timeout-deny |
 | 5 | Cursor adapter + model picker | Same task on Grok 4.5 and Composer 2.5 |
 | 6 | **v1 — form-fill hardening** | "Apply with my resume" on **3 real job sites**, incl. upload + multi-page + gated submit |
 | 7 | Multi-tab research | "Compare these 5 laptops" → table in panel |
@@ -97,6 +99,11 @@ Phase 6 is the ship line.
 - **Panel owns the WebSocket and CDP**, not the service worker — full API access, dodges
   MV3 idle teardown
 - **Auto-run, gate irreversible actions** — gate lives in the bridge, never in a prompt
+- **The gate reads labels off the page text it is already relaying**, rather than asking the
+  panel what a ref points at. The bridge sees every snapshot on its way back to the model,
+  so the label is free; a `describe` round trip would have been a second protocol for
+  information already in hand. Cost: it depends on ax.js's line format, which is why the
+  gate test builds its input from the real `serialize()`
 - **Mouse to the element's own session, keyboard to the main session.** Measured, not
   assumed: the same submit does nothing at translated root coords `104,362` on the main
   session and submits at frame coords `79,197` on the frame's own. Events sent to the tab's
@@ -130,6 +137,11 @@ Phase 6 is the ship line.
   repeatedly, by both CLIs. Measure a task's cost before and after any tool change.
 - A check that asserts on one exact string can't tell "never happened" from "happened
   wrong" — both read as absent. Report what the page actually said.
+- **Actions return the page, so anything that breaks rendering reads as a broken action.**
+  One bad node threw out of `serialize()` and the agent concluded the browser itself was
+  failing, retried, "reset" by navigating away, and burned the run — the click had actually
+  worked. Snapshot rendering must never throw on page data: no AX field is a guaranteed
+  string. Cheap tell in the log: an action fails but the page underneath it did change.
 - Running a second bridge to smoke-test rewrites `.comet-mcp.json` to that port
   (`writeMcpConfig` runs before `listen`). Restart the real one afterwards.
 
