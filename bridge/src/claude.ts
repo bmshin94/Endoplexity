@@ -20,13 +20,19 @@ const CONFIG_PATH = fileURLToPath(new URL("../../.comet-mcp.json", import.meta.u
  * Deliberately generic — no site names. A prompt that knows about Google is a
  * prompt that is wrong on Greenhouse.
  */
-const BRIEFING = [
+export const BRIEFING_CORE = [
   "You drive a real web browser.",
-  "Load every browser tool in ONE ToolSearch call, query:",
-  "select:mcp__comet__snapshot,mcp__comet__navigate,mcp__comet__click,mcp__comet__type,mcp__comet__key",
   "navigate, click and key return the page they produced — never call snapshot after them.",
   "Refs like @f1e7 are only valid on the most recent page you were given.",
   "If an action did not do what you expected, take a different route rather than repeating it.",
+].join(" ");
+
+// Habit 1 is claude-only — cursor hands MCP tools to the model directly, with no
+// deferred-tool step to get wrong.
+const BRIEFING = [
+  BRIEFING_CORE,
+  "Load every browser tool in ONE ToolSearch call, query:",
+  "select:mcp__comet__snapshot,mcp__comet__navigate,mcp__comet__click,mcp__comet__type,mcp__comet__key",
 ].join(" ");
 
 /**
@@ -73,16 +79,21 @@ export function writeMcpConfig(port: number, token: string): string {
  * No `shell: true`: claude resolves to a real .exe, and a shell here would turn
  * a prompt containing quotes into a command-injection surface.
  */
-export function runClaude(prompt: string, onEvent: (event: Record<string, unknown>) => void): ChildProcess {
+export function runClaude(
+  prompt: string,
+  model: string,
+  onEvent: (event: Record<string, unknown>) => void,
+): ChildProcess {
   const child = spawn(
     "claude",
     [
       "-p",
       prompt,
-      // Sonnet by default: browser driving is snapshot-read-click, not hard
-      // reasoning, and the earlier Opus runs billed ~20x for it. P5 adds the picker.
+      // Sonnet is the default the panel offers: browser driving is
+      // snapshot-read-click, not hard reasoning, and the earlier Opus runs billed
+      // ~20x for it. index.ts allowlists what may arrive here.
       "--model",
-      "sonnet",
+      model,
       "--output-format",
       "stream-json",
       "--verbose", // stream-json refuses to run without it

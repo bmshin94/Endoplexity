@@ -6,6 +6,7 @@
   "description": "Agentic browser control driven by your own Claude / Cursor subscriptions",
   "scripts": {
     "start": "node bridge/src/index.ts",
+    "cursor-login": "node bridge/src/cursor-login.ts",
     "test": "node --test \"bridge/test/**/*.test.ts\""
   },
   "dependencies": {

@@ -27,6 +27,7 @@ const logEl = document.getElementById("log");
 const promptEl = document.getElementById("prompt");
 const runBtn = document.getElementById("run");
 const stopBtn = document.getElementById("stop");
+const modelEl = document.getElementById("model");
 const gate = document.getElementById("gate");
 const gateAction = document.getElementById("gate-action");
 const gateApprove = document.getElementById("gate-approve");
@@ -99,14 +100,25 @@ async function answer({ id, name, args }) {
 // The phase gate is a number, so the number has to be on screen. Every input
 // class counts: cache reads are cheaper per token but they are still context the
 // model re-reads on every turn, which is exactly what this phase is cutting.
+// Only the fields that are actually present get a slot: cursor's result carries
+// neither a price nor a token count, and a printed "$0.0000 · 0 tokens" would read
+// as a free run rather than an unreported one.
 function cost(event) {
+  // claude reports snake_case, cursor camelCase. Reading only one spelling is how
+  // a run that cost 60k tokens prints as 0 — the number this phase gate is
+  // measured on, silently absent.
   const u = event.usage ?? {};
   const tokens =
-    (u.input_tokens ?? 0) +
-    (u.cache_creation_input_tokens ?? 0) +
-    (u.cache_read_input_tokens ?? 0) +
-    (u.output_tokens ?? 0);
-  return `— $${(event.total_cost_usd ?? 0).toFixed(4)} · ${tokens.toLocaleString()} tokens · ${event.num_turns ?? "?"} turns · ${Math.round((event.duration_ms ?? 0) / 1000)}s`;
+    (u.input_tokens ?? u.inputTokens ?? 0) +
+    (u.cache_creation_input_tokens ?? u.cacheWriteTokens ?? 0) +
+    (u.cache_read_input_tokens ?? u.cacheReadTokens ?? 0) +
+    (u.output_tokens ?? u.outputTokens ?? 0);
+  const parts = [];
+  if (event.total_cost_usd !== undefined) parts.push(`$${event.total_cost_usd.toFixed(4)}`);
+  if (tokens) parts.push(`${tokens.toLocaleString()} tokens`);
+  if (event.num_turns !== undefined) parts.push(`${event.num_turns} turns`);
+  parts.push(`${Math.round((event.duration_ms ?? 0) / 1000)}s`);
+  return `— ${parts.join(" · ")}`;
 }
 
 // ponytail: still the readable slice of claude's stream-json, not a renderer.
@@ -124,10 +136,25 @@ function describe(event) {
       .filter(Boolean)
       .join("\n");
   }
+  // cursor's own tool-call event. Only the start is logged — the completion
+  // repeats the args and carries the whole tool result, which is a page.
+  if (event.type === "tool_call") {
+    if (event.subtype !== "started") return null;
+    // Keyed by tool kind — `mcpToolCall`, `shellToolCall` — and an MCP call nests
+    // the name and args one level further in, as `comet-navigate`.
+    const call = event.tool_call ?? {};
+    const kind = Object.keys(call)[0] ?? "tool";
+    const args = call[kind]?.args ?? {};
+    const name = args.name ?? kind;
+    return `→ ${String(name).replace(/^comet-/, "")} ${JSON.stringify(args.args ?? args.command ?? args)}`;
+  }
   // The bridge terminal already prints this, but a fake-<function_calls> run is
   // diagnosed from the panel log — so the evidence has to be in the same paste.
+  // cursor's init has no tool list, so it reports what it does carry instead.
   if (event.type === "system" && event.subtype === "init") {
-    return `tools: ${(event.tools ?? []).join(", ") || "(none)"}`;
+    return event.tools
+      ? `tools: ${event.tools.join(", ") || "(none)"}`
+      : `model: ${event.model ?? "?"} · auth: ${event.apiKeySource ?? "?"}`;
   }
   if (event.type === "retry") return `↻ ${event.reason}`;
   if (event.type === "result") return `${event.result ?? event.subtype}\n${cost(event)}`;
@@ -205,10 +232,14 @@ function runTask() {
   if (runBtn.disabled) return log("a task is already running — stop it first");
 
   const prompt = promptEl.value.trim() || promptEl.placeholder;
-  if (!send({ type: "task", prompt })) return; // still idle, Run stays live
-  log(`▶ ${prompt}`);
+  const model = modelEl.value;
+  if (!send({ type: "task", prompt, model })) return; // still idle, Run stays live
+  log(`▶ [${model}] ${prompt}`);
   setBusy(true);
 }
+
+// Survives the panel closing, which Chrome does on every window switch.
+modelEl.addEventListener("change", () => chrome.storage.local.set({ model: modelEl.value }));
 
 runBtn.addEventListener("click", runTask);
 stopBtn.addEventListener("click", () => {
@@ -238,7 +269,8 @@ document.getElementById("ping").addEventListener("click", () => {
 
 log("type a task and hit Run — `await comet.selftest()` in this panel's console checks the tools");
 
-const { token } = await chrome.storage.local.get("token");
+const { token, model } = await chrome.storage.local.get(["token", "model"]);
+if (model) modelEl.value = model;
 if (token) {
   connect(token);
 } else {

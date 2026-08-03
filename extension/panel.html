@@ -36,7 +36,7 @@
       #dot.up { background: #22c55e; }
       #dot.down { background: #ef4444; }
       #status { font-weight: 400; color: var(--muted); }
-      input, button, textarea {
+      input, button, textarea, select {
         font: inherit;
         padding: 6px 10px;
         border-radius: 6px;
@@ -50,6 +50,8 @@
       #prompt { resize: vertical; width: 100%; box-sizing: border-box; }
       .row { display: flex; gap: 6px; }
       .row button { flex: 1; }
+      /* The dropdown keeps its own width so the three buttons stay equal. */
+      #model { flex: none; padding: 6px; }
       #setup { display: none; flex-direction: column; gap: 6px; }
       #setup.show { display: flex; }
       #gate {
@@ -88,6 +90,16 @@
     <textarea id="prompt" rows="2" spellcheck="false"
       placeholder="go to google.com, search for cats, open the first result"></textarea>
     <div class="row">
+      <select id="model" title="which CLI answers is picked from the model">
+        <optgroup label="Claude">
+          <option value="sonnet">Sonnet</option>
+          <option value="opus">Opus</option>
+        </optgroup>
+        <optgroup label="Cursor">
+          <option value="cursor-grok-4.5-medium">Grok 4.5</option>
+          <option value="composer-2.5">Composer 2.5</option>
+        </optgroup>
+      </select>
       <button id="run">Run</button>
       <button id="stop" disabled>Stop</button>
       <button id="ping">Ping</button>

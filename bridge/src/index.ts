@@ -8,6 +8,24 @@ import { authorize, authorizeMcp } from "./auth.ts";
 import { handleMcp } from "./mcp.ts";
 import { setPanel, dropPanel, settle, settleGate } from "./relay.ts";
 import { runClaude, writeMcpConfig } from "./claude.ts";
+import { runCursor, writeCursorConfig } from "./cursor.ts";
+
+/**
+ * The panel picks a model, not a CLI — one dropdown, and which binary answers is
+ * an implementation detail. Doubles as the allowlist: this string reaches a spawn
+ * argv, so an unknown one falls back rather than being passed through.
+ */
+const MODELS: Record<string, typeof runClaude> = {
+  sonnet: runClaude,
+  opus: runClaude,
+  // `grok-4.5` in the design doc is not a real id — cursor exposes reasoning
+  // tiers, `cursor-grok-4.5-{low,medium,high}`, each with a `-fast` twin.
+  // Medium for the same reason claude defaults to sonnet: this is
+  // snapshot-read-click, not reasoning.
+  "cursor-grok-4.5-medium": runCursor,
+  "composer-2.5": runCursor,
+};
+const DEFAULT_MODEL = "sonnet";
 
 const HOST = "127.0.0.1"; // never 0.0.0.0 — this socket can drive a logged-in browser
 // Overridable only so a second instance can be smoke-tested without evicting the
@@ -33,6 +51,7 @@ const FIXTURES: Record<string, URL> = {
 
 const token = loadToken();
 const configPath = writeMcpConfig(PORT, token);
+const cursorDir = writeCursorConfig(PORT, token);
 const wss = new WebSocketServer({ noServer: true });
 
 const http = createServer(async (req, res) => {
@@ -77,22 +96,25 @@ let running: ChildProcess | null = null;
 const FAKE_XML = /<function_calls>|<invoke name=/;
 
 const usedTools = (event: Record<string, unknown>) =>
-  event.type === "assistant" &&
-  ((event.message as { content?: { type?: string }[] } | undefined)?.content ?? []).some(
-    (part) => part.type === "tool_use",
-  );
+  // cursor reports tool calls as their own event; claude nests them in the message
+  event.type === "tool_call" ||
+  (event.type === "assistant" &&
+    ((event.message as { content?: { type?: string }[] } | undefined)?.content ?? []).some(
+      (part) => part.type === "tool_use",
+    ));
 
-function startTask(ws: WebSocket, prompt: unknown, isRetry = false) {
+function startTask(ws: WebSocket, prompt: unknown, model: unknown, isRetry = false) {
   const send = (event: Record<string, unknown>) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "task-event", event }));
   };
   if (typeof prompt !== "string" || !prompt.trim()) return send({ type: "failed", error: "empty prompt" });
   if (running) return send({ type: "failed", error: "a task is already running — stop it first" });
 
-  console.log(`task: ${prompt}`);
+  const chosen = typeof model === "string" && Object.hasOwn(MODELS, model) ? model : DEFAULT_MODEL;
+  console.log(`task (${chosen}): ${prompt}`);
   let sawTool = false;
   let redo = false;
-  running = runClaude(prompt, (event) => {
+  running = MODELS[chosen](prompt, chosen, (event) => {
     if (usedTools(event)) sawTool = true;
     // Only worth retrying a run that did nothing: once a real tool call has
     // landed, the same text pattern is the agent quoting itself, not faking.
@@ -102,7 +124,11 @@ function startTask(ws: WebSocket, prompt: unknown, isRetry = false) {
     // actually have the tools" — a model that emits fake <function_calls> XML as
     // text looks identical in the panel to one whose tools are missing.
     if (event.type === "system" && event.subtype === "init") {
-      console.log(`  tools: ${JSON.stringify(event.tools)}`);
+      // cursor's init carries no tool list, so "tools: undefined" there is the
+      // shape of its event, not a run that came up empty — say which.
+      console.log(
+        event.tools ? `  tools: ${JSON.stringify(event.tools)}` : `  ${event.model} (no tool list in init)`,
+      );
     }
     console.log(`  ${JSON.stringify(event).slice(0, 200)}`);
 
@@ -111,7 +137,7 @@ function startTask(ws: WebSocket, prompt: unknown, isRetry = false) {
     // gone. The panel stays busy throughout, so this reads as one slow task.
     if (event.type === "done" || event.type === "failed") {
       send({ type: "retry", reason: "the agent wrote its tool calls as text instead of calling them — retrying once" });
-      startTask(ws, prompt, true);
+      startTask(ws, prompt, chosen, true);
     }
   });
 }
@@ -130,7 +156,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "ping") ws.send(JSON.stringify({ type: "pong", at: Date.now() }));
     else if (msg.type === "tool-result") settle(msg);
     else if (msg.type === "gate-reply") settleGate(msg);
-    else if (msg.type === "task") startTask(ws, msg.prompt);
+    else if (msg.type === "task") startTask(ws, msg.prompt, msg.model);
     else if (msg.type === "stop") running?.kill();
   });
 
@@ -144,5 +170,6 @@ http.listen(PORT, HOST, () => {
   console.log(`bridge listening on ws://${HOST}:${PORT}`);
   console.log(`token: ${token}`);
   console.log("paste that into the side panel once; it is stored in chrome.storage.local");
-  console.log(`mcp config for the CLIs: ${configPath}`);
+  console.log(`mcp config for claude: ${configPath}`);
+  console.log(`isolated cursor profile: ${cursorDir}`);
 });
