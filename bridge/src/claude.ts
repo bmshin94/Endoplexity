@@ -51,9 +51,13 @@ export function writeMcpConfig(port: number, token: string): string {
 }
 
 /**
- * Spawn `claude -p` with browser tools and nothing else.
+ * The flag set is a security boundary, not a preference — exported as a plain
+ * array so a test can assert on it without spawning anything. Regexing the
+ * source was the old check, and it passes just as happily on a typo'd flag as
+ * on a correct one, which is the same trap cursor.test.ts already avoids by
+ * asserting on the config it writes rather than the code that writes it.
  *
- * The flag set is a security boundary, not a preference. Each one is load-bearing:
+ * Each flag is load-bearing:
  *
  *  - `--tools "ToolSearch"` cuts the built-in set down to one schema-lookup tool.
  *    The design doc called for a denylist (`--disallowedTools Bash Edit Write
@@ -73,8 +77,45 @@ export function writeMcpConfig(port: number, token: string): string {
  *    CLAUDE.md do not end up as context in a browser agent. Worth real money:
  *    with them loaded a one-tool task billed 33k tokens of unrelated preamble.
  *
+ *  - `--resume <id>` continues an existing transcript instead of starting one.
+ *    Every other flag is still passed alongside it: resuming restores the
+ *    conversation, NOT the tool restrictions, so a resumed run that dropped
+ *    `--tools` would hand a browser agent a shell. Verified by running a
+ *    resumed task and reading its init event, not by reading this comment.
+ *
  * Deliberately NOT `--bare`, which also skips hooks but forces auth to
  * ANTHROPIC_API_KEY — the whole point here is to run on an existing subscription.
+ */
+export const claudeArgs = (prompt: string, model: string, resume?: string): string[] => [
+  "-p",
+  prompt,
+  // Sonnet is the default the panel offers: browser driving is
+  // snapshot-read-click, not hard reasoning, and the earlier Opus runs billed
+  // ~20x for it. index.ts allowlists what may arrive here.
+  "--model",
+  model,
+  // Before --allowedTools, which is variadic and swallows whatever follows it.
+  ...(resume ? ["--resume", resume] : []),
+  "--output-format",
+  "stream-json",
+  "--verbose", // stream-json refuses to run without it
+  "--append-system-prompt",
+  BRIEFING,
+  "--mcp-config",
+  CONFIG_PATH,
+  "--strict-mcp-config",
+  "--setting-sources",
+  "",
+  "--tools",
+  "ToolSearch",
+  // Variadic, so it stays last or it swallows whatever follows.
+  "--allowedTools",
+  "ToolSearch,mcp__comet__*",
+];
+
+/**
+ * Spawn `claude -p` with browser tools and nothing else. Pass `resume` to
+ * continue a previous run's transcript rather than starting a fresh one.
  *
  * No `shell: true`: claude resolves to a real .exe, and a shell here would turn
  * a prompt containing quotes into a command-injection surface.
@@ -83,33 +124,11 @@ export function runClaude(
   prompt: string,
   model: string,
   onEvent: (event: Record<string, unknown>) => void,
+  resume?: string,
 ): ChildProcess {
   const child = spawn(
     "claude",
-    [
-      "-p",
-      prompt,
-      // Sonnet is the default the panel offers: browser driving is
-      // snapshot-read-click, not hard reasoning, and the earlier Opus runs billed
-      // ~20x for it. index.ts allowlists what may arrive here.
-      "--model",
-      model,
-      "--output-format",
-      "stream-json",
-      "--verbose", // stream-json refuses to run without it
-      "--append-system-prompt",
-      BRIEFING,
-      "--mcp-config",
-      CONFIG_PATH,
-      "--strict-mcp-config",
-      "--setting-sources",
-      "",
-      "--tools",
-      "ToolSearch",
-      // Variadic, so it stays last or it swallows whatever follows.
-      "--allowedTools",
-      "ToolSearch,mcp__comet__*",
-    ],
+    claudeArgs(prompt, model, resume),
     // Somewhere with no CLAUDE.md, belt to --setting-sources' braces.
     // stdin ignored: -p otherwise waits 3s for piped input that never comes.
     { cwd: tmpdir(), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },

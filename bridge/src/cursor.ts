@@ -128,36 +128,46 @@ export function writeCursorConfig(port: number, token: string, dir: string = CON
 const BRIEFING = BRIEFING_CORE;
 
 /**
- * Spawn `cursor-agent -p` restricted to the browser tools.
- *
- * The restriction lives in `cli-config.json`, not in flags — this CLI has no
- * `--tools`/`--allowedTools`. Notably absent: `--force`/`--yolo`, which is
- * "run everything" and would undo the permission set entirely.
+ * The args for a restricted `cursor-agent -p`, exported so a test can assert on
+ * them without spawning. The restriction itself lives in `cli-config.json`, not
+ * in flags — this CLI has no `--tools`/`--allowedTools`. Notably absent:
+ * `--force`/`--yolo`, which is "run everything" and would undo the permissions.
  *
  *  - `--approve-mcps` auto-approves the MCP servers in the config directory,
  *    which after `writeCursorConfig` is only comet. Without it the run stalls on
  *    an approval prompt no one is there to answer.
  *  - `--trust` accepts the workspace non-interactively. Same reason.
+ *  - `--resume <chatId>` continues a previous transcript. The briefing is
+ *    dropped on a resume: it is already the first thing in that transcript, and
+ *    re-sending it pays for the same paragraph on every turn of the rest of the
+ *    conversation.
+ */
+export const cursorArgs = (prompt: string, model: string, resume?: string): string[] => [
+  "-p",
+  resume ? prompt : `${BRIEFING} ${prompt}`,
+  ...(resume ? ["--resume", resume] : []),
+  "--output-format",
+  "stream-json",
+  "--model",
+  model,
+  "--approve-mcps",
+  "--trust",
+];
+
+/**
+ * Spawn `cursor-agent -p` restricted to the browser tools. Pass `resume` to
+ * continue a previous run's chat rather than starting a fresh one.
  */
 export function runCursor(
   prompt: string,
   model: string,
   onEvent: (event: Record<string, unknown>) => void,
+  resume?: string,
 ): ChildProcess {
   const { command, leading } = resolveCursor();
   const child = spawn(
     command,
-    [
-      ...leading,
-      "-p",
-      `${BRIEFING} ${prompt}`,
-      "--output-format",
-      "stream-json",
-      "--model",
-      model,
-      "--approve-mcps",
-      "--trust",
-    ],
+    [...leading, ...cursorArgs(prompt, model, resume)],
     {
       cwd: tmpdir(),
       windowsHide: true,

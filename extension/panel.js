@@ -16,6 +16,10 @@ globalThis.comet = {
     promptEl.value = prompt;
     runTask();
   },
+  reply: (answer) => {
+    promptEl.value = answer;
+    runTask(true);
+  },
   stop: () => stopBtn.click(),
 };
 
@@ -27,6 +31,7 @@ const logEl = document.getElementById("log");
 const promptEl = document.getElementById("prompt");
 const profileEl = document.getElementById("profile");
 const runBtn = document.getElementById("run");
+const replyBtn = document.getElementById("reply");
 const stopBtn = document.getElementById("stop");
 const modelEl = document.getElementById("model");
 const gate = document.getElementById("gate");
@@ -40,6 +45,11 @@ let sentAt = 0;
 // its id (not just a boolean) lets a stale button click be told apart from a
 // still-live one if a row somehow outlives its gate.
 let pendingGateId = null;
+// Whether the last run left a transcript the bridge can continue. The id itself
+// stays bridge-side — the panel only needs to know if Reply leads anywhere, and
+// starting false means a freshly opened panel never offers to reply to a
+// conversation it did not see.
+let resumable = false;
 
 function log(line) {
   logEl.textContent += `${new Date().toLocaleTimeString()}  ${line}\n`;
@@ -158,7 +168,11 @@ function describe(event) {
       : `model: ${event.model ?? "?"} · auth: ${event.apiKeySource ?? "?"}`;
   }
   if (event.type === "retry") return `↻ ${event.reason}`;
-  if (event.type === "result") return `${event.result ?? event.subtype}\n${cost(event)}`;
+  // `||`, not `??`: cursor can finish a turn with result:"" when the model left
+  // its answer in thinking deltas and emitted no assistant text (measured
+  // 2026-08-04 on composer-2.5). An empty string is not nullish, so `??` printed
+  // a blank line and the run read as having produced nothing at all.
+  if (event.type === "result") return `${event.result || event.subtype}\n${cost(event)}`;
   if (event.type === "done") return event.error ? `failed — ${event.error}` : "task finished";
   if (event.type === "failed") return `failed — ${event.error}`;
   return null;
@@ -190,6 +204,9 @@ function connect(token) {
     if (msg.type === "task-event") {
       // "done" is the child exiting, however it went — including a Stop.
       if (msg.event.type === "done" || msg.event.type === "failed") {
+        // The bridge annotates the terminal event instead of sending a message
+        // of its own, so Reply lights up in the same tick Run does.
+        resumable = msg.event.resumable === true;
         setBusy(false);
         // The bridge only denies-and-moves-on after its own 60s timeout, but the
         // task can also end on its own first (Stop, crash) — either way the row
@@ -223,25 +240,41 @@ function connect(token) {
 // The bridge runs one task at a time, so the buttons say which one is possible.
 function setBusy(on) {
   runBtn.disabled = on;
+  replyBtn.disabled = on || !resumable;
   stopBtn.disabled = !on;
 }
 
-function runTask() {
+/** Run is a fresh conversation; Reply continues the last one. */
+function runTask(resume = false) {
   // The console path shares this, so the guard has to live here rather than on
   // the button — otherwise comet.task() twice gets a "already running" failure
   // back and that clears the busy state out from under the task still going.
-  if (runBtn.disabled) return log("a task is already running — stop it first");
+  if (resume ? replyBtn.disabled : runBtn.disabled) {
+    // Reply is disabled for two different reasons — say which one actually applies.
+    return log(resume && !resumable ? "nothing to reply to yet" : "a task is already running — stop it first");
+  }
 
-  const prompt = promptEl.value.trim() || promptEl.placeholder;
-  const profile = profileEl.value.trim();
+  const typed = promptEl.value.trim();
+  // The placeholder is an example task, so falling back to it on a reply would
+  // send the agent an answer it never asked for.
+  if (resume && !typed) return log("type your answer first");
+  const prompt = typed || promptEl.placeholder;
+  // On a reply the profile is already in the transcript the agent is resuming,
+  // and re-appending it would re-send the same personal data every turn.
+  const profile = resume ? "" : profileEl.value.trim();
   // The bridge gets `sent` (prompt + profile); the log below stays on `prompt`
   // alone. Profile is personal data — name, email, phone — and the log is what
   // gets pasted into bug reports and phase write-ups. Do not "simplify" this to
   // log `sent` — that would leak it into every paste.
   const sent = profile ? `${prompt}\n\nApplicant details:\n${profile}` : prompt;
+  // The model rides along, but the bridge overrules it on a reply: a claude
+  // transcript cannot be handed to cursor-agent.
   const model = modelEl.value;
-  if (!send({ type: "task", prompt: sent, model })) return; // still idle, Run stays live
-  log(`▶ [${model}] ${prompt}`);
+  if (!send({ type: "task", prompt: sent, model, resume })) return; // still idle, buttons stay live
+  log(`${resume ? "↩" : "▶"} [${model}] ${prompt}`);
+  // Only on a reply — a re-read task is worth keeping in the box, a re-sent
+  // answer is just the same answer twice.
+  if (resume) promptEl.value = "";
   setBusy(true);
 }
 
@@ -249,17 +282,26 @@ function runTask() {
 modelEl.addEventListener("change", () => chrome.storage.local.set({ model: modelEl.value }));
 profileEl.addEventListener("change", () => chrome.storage.local.set({ profile: profileEl.value }));
 
-runBtn.addEventListener("click", runTask);
+// Wrapped, not passed directly — a listener is handed the MouseEvent, which as
+// runTask's first argument would make every click a reply.
+runBtn.addEventListener("click", () => runTask());
+replyBtn.addEventListener("click", () => runTask(true));
 stopBtn.addEventListener("click", () => {
   log("■ stopping");
   send({ type: "stop" });
 });
 
-// Enter runs, shift+Enter is a newline — the prompt is usually one line.
+// Enter answers the agent when there is a conversation to answer and starts a
+// fresh task otherwise; shift+Enter is a newline. The reflex after the agent
+// asks a question is to type and hit Enter — sending that as a brand-new
+// contextless run is the expensive mistake, so Reply wins the key while it is
+// live. The log marks which happened, ↩ or ▶.
 promptEl.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" || event.shiftKey || runBtn.disabled) return;
+  if (event.key !== "Enter" || event.shiftKey) return;
+  const resume = !replyBtn.disabled;
+  if (!resume && runBtn.disabled) return;
   event.preventDefault();
-  runTask();
+  runTask(resume);
 });
 
 document.getElementById("save").addEventListener("click", async () => {

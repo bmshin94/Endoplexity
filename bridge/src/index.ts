@@ -85,6 +85,32 @@ http.on("upgrade", (req, socket, head) => {
 // One task at a time. Two agents driving one tab would fight over every ref.
 let running: ChildProcess | null = null;
 
+/**
+ * The transcript the next task can pick up, or null if there is nothing to pick
+ * up. A finished run is not a dead run — the CLI keeps its transcript on disk
+ * and `--resume` continues it.
+ *
+ * This is the difference between an agent that can ask a question and one that
+ * cannot: the first live Greenhouse run stopped to ask for applicant data and
+ * died there, because a fresh spawn per task left the answer nowhere to go.
+ *
+ * In memory on purpose — it dies with the bridge. Resuming across a restart
+ * would mean resuming into a Chrome that has since moved on, and every ref in
+ * that transcript is already stale.
+ */
+let session: { id: string; model: string } | null = null;
+
+/**
+ * claude spells it `session_id`; cursor's bundle carries that spelling, its
+ * camelCase twin, and `chatId` — which is what its own `--resume [chatId]`
+ * asks for. Read all three rather than pinning one and silently reporting
+ * every resumable run as unresumable.
+ */
+const sessionOf = (event: Record<string, unknown>): string | undefined =>
+  [event.session_id, event.sessionId, event.chatId].find(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+
 // Twice now the agent has written its tool calls out as XML text instead of
 // calling anything: one turn, zero real calls, then a confident report of a
 // browser session that never happened. Both times the init event listed the
@@ -103,19 +129,39 @@ const usedTools = (event: Record<string, unknown>) =>
       (part) => part.type === "tool_use",
     ));
 
-function startTask(ws: WebSocket, prompt: unknown, model: unknown, isRetry = false) {
+function startTask(
+  ws: WebSocket,
+  prompt: unknown,
+  model: unknown,
+  { isRetry = false, resume = false } = {},
+) {
   const send = (event: Record<string, unknown>) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "task-event", event }));
   };
   if (typeof prompt !== "string" || !prompt.trim()) return send({ type: "failed", error: "empty prompt" });
   if (running) return send({ type: "failed", error: "a task is already running — stop it first" });
 
-  const chosen = typeof model === "string" && Object.hasOwn(MODELS, model) ? model : DEFAULT_MODEL;
-  console.log(`task (${chosen}): ${prompt}`);
+  // Resuming pins the CLI as well as the transcript — a claude session cannot be
+  // handed to cursor-agent — so the panel's dropdown gets no vote on a reply.
+  const resuming = resume ? session : null;
+  if (resume && !resuming) return send({ type: "failed", error: "no conversation to reply to" });
+
+  const chosen = resuming
+    ? resuming.model
+    : typeof model === "string" && Object.hasOwn(MODELS, model)
+      ? model
+      : DEFAULT_MODEL;
+  // A fresh task abandons the old transcript before the new one reports its own
+  // id, so a spawn that dies early cannot leave the previous session looking live.
+  if (!resuming) session = null;
+
+  console.log(`${resuming ? "reply" : "task"} (${chosen}): ${prompt}`);
   let sawTool = false;
   let sawFake = false;
   let redo = false;
-  running = MODELS[chosen](prompt, chosen, (event) => {
+  const onEvent = (event: Record<string, unknown>) => {
+    const id = sessionOf(event);
+    if (id) session = { id, model: chosen };
     if (usedTools(event)) sawTool = true;
     // Latched across the whole run, not read off the result event alone. That
     // was the bug: the fake XML is emitted in `assistant` events, and a run
@@ -140,14 +186,24 @@ function startTask(ws: WebSocket, prompt: unknown, model: unknown, isRetry = fal
     }
     console.log(`  ${JSON.stringify(event).slice(0, 200)}`);
 
-    if (!redo) return send(event);
+    // The panel offers Reply off this flag, so it rides on the event that turns
+    // the buttons back on rather than arriving as a message of its own. A run
+    // killed by Stop is resumable too — that is the point, not an oversight.
+    if (!redo) {
+      const terminal = event.type === "done" || event.type === "failed";
+      return send(terminal ? { ...event, resumable: session !== null } : event);
+    }
     // Swallow the void run entirely, then respawn once the child is actually
     // gone. The panel stays busy throughout, so this reads as one slow task.
     if (event.type === "done" || event.type === "failed") {
       send({ type: "retry", reason: "the agent wrote its tool calls as text instead of calling them — retrying once" });
-      startTask(ws, prompt, chosen, true);
+      // Never resumed: the point of the retry is to discard a transcript whose
+      // only content is faked tool calls.
+      startTask(ws, prompt, chosen, { isRetry: true });
     }
-  });
+  };
+
+  running = MODELS[chosen](prompt, chosen, onEvent, resuming?.id);
 }
 
 wss.on("connection", (ws) => {
@@ -164,7 +220,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "ping") ws.send(JSON.stringify({ type: "pong", at: Date.now() }));
     else if (msg.type === "tool-result") settle(msg);
     else if (msg.type === "gate-reply") settleGate(msg);
-    else if (msg.type === "task") startTask(ws, msg.prompt, msg.model);
+    else if (msg.type === "task") startTask(ws, msg.prompt, msg.model, { resume: msg.resume === true });
     else if (msg.type === "stop") running?.kill();
   });
 

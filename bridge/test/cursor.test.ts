@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeCursorConfig } from "../src/cursor.ts";
+import { cursorArgs, writeCursorConfig } from "../src/cursor.ts";
 
 // cursor-agent has no --allowedTools, so the whole restriction is this file.
 // These assert on what writeCursorConfig actually produces rather than on the
@@ -49,6 +49,29 @@ test("a corrupt config is rewritten rather than crashing the bridge at startup",
   writeFileSync(join(dir, "cli-config.json"), "{ not json");
   writeCursorConfig(4242, "s3cret", dir);
   assert.deepEqual(read(dir, "cli-config.json").permissions.allow, ["Mcp(comet:*)"]);
+});
+
+const args = (resume?: string) => cursorArgs("do a thing", "composer-2.5", resume);
+const promptOf = (argv: string[]) => argv[argv.indexOf("-p") + 1];
+
+test("a fresh run briefs the agent and resumes nothing", () => {
+  const argv = args();
+  assert.ok(!argv.includes("--resume"));
+  assert.match(promptOf(argv), /^You drive a real web browser\..*do a thing$/);
+});
+
+test("a reply resumes the chat and drops the briefing already in its transcript", () => {
+  const argv = args("chat-9");
+  assert.equal(argv[argv.indexOf("--resume") + 1], "chat-9");
+  assert.equal(promptOf(argv), "do a thing");
+});
+
+// Same reason as claude's boundary test: resuming restores the conversation, and
+// everything that makes the run non-interactive has to be passed again with it.
+test("resuming still auto-approves comet and trusts the workspace", () => {
+  for (const flag of ["--approve-mcps", "--trust"]) {
+    assert.ok(args("chat-9").includes(flag), `${flag} must survive a resume`);
+  }
 });
 
 // Comments here quote the very flags and options these tests forbid — explaining
