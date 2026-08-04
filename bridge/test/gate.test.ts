@@ -96,6 +96,32 @@ test("an approved click is released to the panel", async () => {
   dropPanel(panel as never);
 });
 
+test("gates Enter when the page carries a submit-ish control", () => {
+  const { text, refs } = serialize(page(), "f0");
+  remember(text);
+  const [submitRef] = refs.keys();
+  assert.equal(
+    check("key", { name: "Enter" }),
+    `press Enter — this page has ${submitRef} [button] "Submit Application"`,
+  );
+});
+
+test("does not gate Enter on a page with only benign controls", () => {
+  const benign = [
+    node("1", "RootWebArea", { name: "Search", childIds: ["2"] }),
+    node("2", "searchbox", { name: "Search", backendDOMNodeId: 11 }),
+  ];
+  const { text } = serialize(benign, "f0");
+  remember(text);
+  assert.equal(check("key", { name: "Enter" }), null);
+});
+
+test("a non-Enter key never gates, even on a page with a submit control", () => {
+  const { text } = serialize(page(), "f0");
+  remember(text);
+  assert.equal(check("key", { name: "Tab" }), null);
+});
+
 test("a denied click returns an isError result telling the model not to retry", async () => {
   const { text, refs } = serialize(page(), "f0");
   remember(text);

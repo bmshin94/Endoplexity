@@ -113,12 +113,20 @@ function startTask(ws: WebSocket, prompt: unknown, model: unknown, isRetry = fal
   const chosen = typeof model === "string" && Object.hasOwn(MODELS, model) ? model : DEFAULT_MODEL;
   console.log(`task (${chosen}): ${prompt}`);
   let sawTool = false;
+  let sawFake = false;
   let redo = false;
   running = MODELS[chosen](prompt, chosen, (event) => {
     if (usedTools(event)) sawTool = true;
+    // Latched across the whole run, not read off the result event alone. That
+    // was the bug: the fake XML is emitted in `assistant` events, and a run
+    // that fakes its way through and then ends by asking a question has a
+    // perfectly clean result event — measured 2026-08-04 on a Greenhouse form,
+    // 14 faked calls, 1 turn, $0.06, and no retry because the last message
+    // happened not to contain the pattern.
+    if (FAKE_XML.test(JSON.stringify(event))) sawFake = true;
     // Only worth retrying a run that did nothing: once a real tool call has
     // landed, the same text pattern is the agent quoting itself, not faking.
-    if (event.type === "result" && !sawTool && !isRetry && FAKE_XML.test(JSON.stringify(event))) redo = true;
+    if (event.type === "result" && !sawTool && !isRetry && sawFake) redo = true;
     if (event.type === "done" || event.type === "failed") running = null;
     // Untruncated, because this is the one line that settles "did the agent
     // actually have the tools" — a model that emits fake <function_calls> XML as

@@ -22,7 +22,7 @@ const CONFIG_PATH = fileURLToPath(new URL("../../.comet-mcp.json", import.meta.u
  */
 export const BRIEFING_CORE = [
   "You drive a real web browser.",
-  "navigate, click and key return the page they produced — never call snapshot after them.",
+  "navigate, click, key, upload and select return the page they produced — never call snapshot after them.",
   "Refs like @f1e7 are only valid on the most recent page you were given.",
   "If an action did not do what you expected, take a different route rather than repeating it.",
 ].join(" ");
@@ -32,7 +32,7 @@ export const BRIEFING_CORE = [
 const BRIEFING = [
   BRIEFING_CORE,
   "Load every browser tool in ONE ToolSearch call, query:",
-  "select:mcp__comet__snapshot,mcp__comet__navigate,mcp__comet__click,mcp__comet__type,mcp__comet__key",
+  "select:mcp__comet__snapshot,mcp__comet__navigate,mcp__comet__click,mcp__comet__type,mcp__comet__key,mcp__comet__upload,mcp__comet__select",
 ].join(" ");
 
 /**

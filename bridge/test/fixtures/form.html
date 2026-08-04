@@ -6,16 +6,40 @@
     <style>
       body { font: 14px/1.5 system-ui, sans-serif; margin: 16px; }
       label { display: block; margin: 8px 0; }
-      input { display: block; width: 260px; padding: 4px; }
+      input, select { display: block; width: 260px; padding: 4px; }
+      #step2 { display: none; }
       #result { font-family: ui-monospace, monospace; white-space: pre-wrap; color: #166534; }
     </style>
   </head>
   <body>
     <form id="form">
-      <label>First name <input name="first" required /></label>
-      <label>Last name <input name="last" required /></label>
-      <label>Email <input name="email" type="email" required /></label>
-      <button type="submit">Submit Application</button>
+      <div id="step1">
+        <label>First name <input name="first" required /></label>
+        <label>Last name <input name="last" required /></label>
+        <label>Email <input name="email" type="email" required /></label>
+        <button type="button" id="continue">Continue</button>
+      </div>
+      <div id="step2">
+        <label>Source
+          <select name="source">
+            <option value="">Select one</option>
+            <option value="linkedin">LinkedIn</option>
+            <option value="referral">
+              Referral
+            </option>
+            <option value="website">Company website</option>
+          </select>
+        </label>
+        <!-- Hidden input behind a styled button, copied from real ATS forms
+             (Greenhouse etc): invisible to the user AND the accessibility tree,
+             which is why the upload tool searches the DOM for it instead of
+             taking a ref like every other tool does. The button itself does
+             nothing — real forms wire its click to the input, this one doesn't
+             need to for the tool to find it. -->
+        <input type="file" id="resume" name="resume" style="display: none" />
+        <button type="button">Attach resume</button>
+        <button type="submit">Submit Application</button>
+      </div>
     </form>
     <pre id="result"></pre>
 
@@ -25,9 +49,18 @@
       // not a value assignment, which is the whole reason for Input.dispatchKeyEvent.
       let keys = 0;
       addEventListener("keydown", () => keys++);
+
+      document.getElementById("continue").addEventListener("click", () => {
+        document.getElementById("step1").style.display = "none";
+        document.getElementById("step2").style.display = "block";
+      });
+
       document.getElementById("form").addEventListener("submit", (e) => {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target));
+        // FormData hands back the File object under "resume"; a name is what a
+        // human and a self-test can both read back out of the JSON below.
+        data.resume = document.getElementById("resume").files[0]?.name ?? null;
         result.textContent = `submitted after ${keys} keydowns\n${JSON.stringify(data, null, 2)}`;
       });
     </script>

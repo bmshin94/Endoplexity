@@ -47,11 +47,30 @@ export function remember(text: string): void {
 const IRREVERSIBLE = /\b(submit|apply|pay|buy|purchase|order|checkout|confirm|delete|remove|send|book|sign up|accept|agree)\b/i;
 
 /**
- * Does this tool call need a human? Only `click`, and only when its ref
- * resolves to a label that reads as irreversible. Returns a one-line
+ * Does this tool call need a human? `click`, when its ref resolves to a
+ * label that reads as irreversible — and `key: Enter`, when the current page
+ * carries ANY irreversible-labelled control (see below). Returns a one-line
  * description for the approval prompt, or null to let it run.
  */
 export function check(name: string, args: Record<string, unknown>): string | null {
+  if (name === "key" && args.name === "Enter") {
+    // key: Enter bypasses a ref-based gate entirely — a focused form submits
+    // on Enter with no click, and the bridge cannot see what has focus, so it
+    // cannot narrow this the way click narrows by ref. The fallback: gate
+    // Enter whenever the page carries ANY irreversible-labelled control at
+    // all. A job application page has "Submit Application" on it and gates;
+    // a Google search box page matches nothing in IRREVERSIBLE and stays
+    // silent, so ordinary search flows are not degraded. False positives
+    // cost one dismiss; false negatives are the bypass we cannot accept.
+    // ponytail: page-level heuristic, not focus tracking — the known ceiling
+    // is a page that mixes a submit button with an unrelated search box,
+    // which over-gates. Add real focus tracking if that turns out to matter.
+    for (const [ref, label] of labels) {
+      if (IRREVERSIBLE.test(label)) return `press Enter — this page has ${ref} ${label}`;
+    }
+    return null;
+  }
+
   if (name !== "click") return null;
   const ref = args.ref;
   if (typeof ref !== "string") return null;

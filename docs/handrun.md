@@ -19,16 +19,18 @@ real page the way Phase 2 serialized it and the way it does now, and prints the
 ratio. No agent run, so it costs nothing.
 
 It navigates the active tab to the OOPIF fixture itself and prints PASS/FAIL per
-check. Nothing to open, nothing to compare by eye.
+check. Nothing to open, nothing to compare by eye. The fixture is now a two-step
+form, so the checks click **Continue** partway through, then exercise a native
+dropdown (incl. an option whose markup has stray whitespace, and a nonsense value
+that must fail with the option list in the error) and the file-upload path (incl.
+a page with no file input at all).
 
-```
-PASS  OOPIF auto-attach
-PASS  form fields found in the snapshot
-PASS  fields live in a child frame, not f0
-PASS  trusted keystrokes reached the cross-origin form
-PASS  typed values landed
-PASS  unknown ref rejected
-PASS  refs go stale on navigation
+Pass a path to also exercise the upload happy path — the panel can't fabricate a
+file on disk, so without one that single check prints as `SKIP`, distinct from
+and not counted against PASS/FAIL:
+
+```js
+await comet.selftest("C:\\path\\to\\some.pdf")
 ```
 
 The fixture (`bridge/test/fixtures/`) serves its form from `localhost` while the
@@ -58,6 +60,29 @@ the refs from the page the last action handed back.
 Snapshots list actionable elements only. Body text costs the agent on every turn
 after it is read, so reading tasks pass `full: true` rather than everything
 paying for it by default.
+
+## Applying with a resume
+
+The panel has a collapsed **Profile** section above the task box — paste name,
+email, phone, location, work authorisation, whatever the forms keep asking for.
+It's stored in `chrome.storage.local`, so it survives reloads, and gets appended
+(clearly delimited) to whatever prompt you send, so "apply with my resume" doesn't
+need those details typed out per task. The panel log only ever shows the prompt
+you typed, never the profile — it's personal data and the log is what ends up
+pasted into bug reports.
+
+The resume itself uploads by KEY, never a path — the model only ever sees a
+name like `resume` in the tool description, never a filesystem path (it runs in
+the browser process, which can read anything you can). A repo-root
+`.comet-files.json` is the one place a key becomes an absolute path, and it's
+a human-edited allow-list, never anything the model writes:
+
+```json
+{ "resume": "C:\\Users\\you\\Documents\\resume.pdf" }
+```
+
+Copy `.comet-files.example.json` to get started. Not committed — it points at a
+real path on your machine.
 
 ## On a real job site
 

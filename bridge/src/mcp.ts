@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { callPanel, askPanel } from "./relay.ts";
 import { check, remember } from "./gate.ts";
+import { keys, resolve } from "./files.ts";
 
 /**
  * The browser tools, written once. Both CLIs speak MCP, so Phase 5 gets these
@@ -38,7 +39,15 @@ export async function relay(name: string, args: Record<string, unknown>) {
     remember(text);
     return { content: [{ type: "text" as const, text }] };
   } catch (err) {
-    return { content: [{ type: "text" as const, text: `error: ${(err as Error).message}` }], isError: true };
+    const text = `error: ${(err as Error).message}`;
+    // A failed action's error message can carry the FRESH page (stale-ref
+    // recovery) — if that page never reaches remember(), the gate's
+    // ref->label map goes stale on exactly the page the model is about to
+    // act on next, and it silently stops recognising a submit button. Do
+    // not "clean up" this call: remember() is already a no-op on text with
+    // no ref lines, so it costs nothing on an ordinary error.
+    remember(text);
+    return { content: [{ type: "text" as const, text }], isError: true };
   }
 }
 
@@ -100,6 +109,54 @@ function build() {
       inputSchema: { name: z.enum(KEYS) },
     },
     ({ name }) => relay("key", { name }),
+  );
+
+  // The available keys are read fresh on every build() (every request, see
+  // handleMcp below) — same lazy-read reasoning as files.ts itself, so a key
+  // added while the bridge is running shows up in the description right away.
+  const fileKeys = keys();
+  const keysNote = fileKeys.length
+    ? `Configured keys: ${fileKeys.join(", ")}.`
+    : "No files are configured — tell the user to add one to .comet-files.json.";
+
+  server.registerTool(
+    "upload",
+    {
+      description:
+        `Attach a configured file to the file input on the page and return the page afterwards — do not call snapshot after this. Takes a KEY, never a path: only files the human explicitly configured can be attached. ${keysNote} No ref needed: the real input is often hidden behind a styled button.`,
+      inputSchema: {
+        file: z.string().describe('A configured key, e.g. "resume" — not a file path'),
+        match: z
+          .string()
+          .optional()
+          .describe("Only needed when the page has more than one file input, which the result says — part of the wanted input's label, e.g. \"cover\""),
+      },
+    },
+    async ({ file, match }) => {
+      try {
+        return await relay("upload", { path: resolve(file), match });
+      } catch (err) {
+        // Same rule as relay()'s own catch above: a tool failure the model
+        // can read is worth more than a dead turn. resolve() throws
+        // synchronously on a bad/missing key, before relay() ever runs — this
+        // catch is what turns that into an isError result instead of an MCP
+        // protocol error the model cannot see or recover from.
+        return { content: [{ type: "text" as const, text: `error: ${(err as Error).message}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "select",
+    {
+      description:
+        "Choose an option in a NATIVE <select> and return the page afterwards — do not call snapshot after this. click cannot operate a native select: its popup is browser UI the renderer never sees. Most job forms instead use a custom combobox, which this refuses with an error telling you to click it open and click the option; that path works, so try this first and follow the error if it comes.",
+      inputSchema: {
+        ref: z.string().describe("A ref from the latest snapshot, e.g. @f1e7"),
+        value: z.string().describe("The option's visible text or its value attribute"),
+      },
+    },
+    (args) => relay("select", args),
   );
 
   return server;

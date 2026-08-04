@@ -25,6 +25,7 @@ const setup = document.getElementById("setup");
 const tokenInput = document.getElementById("token");
 const logEl = document.getElementById("log");
 const promptEl = document.getElementById("prompt");
+const profileEl = document.getElementById("profile");
 const runBtn = document.getElementById("run");
 const stopBtn = document.getElementById("stop");
 const modelEl = document.getElementById("model");
@@ -232,14 +233,21 @@ function runTask() {
   if (runBtn.disabled) return log("a task is already running — stop it first");
 
   const prompt = promptEl.value.trim() || promptEl.placeholder;
+  const profile = profileEl.value.trim();
+  // The bridge gets `sent` (prompt + profile); the log below stays on `prompt`
+  // alone. Profile is personal data — name, email, phone — and the log is what
+  // gets pasted into bug reports and phase write-ups. Do not "simplify" this to
+  // log `sent` — that would leak it into every paste.
+  const sent = profile ? `${prompt}\n\nApplicant details:\n${profile}` : prompt;
   const model = modelEl.value;
-  if (!send({ type: "task", prompt, model })) return; // still idle, Run stays live
+  if (!send({ type: "task", prompt: sent, model })) return; // still idle, Run stays live
   log(`▶ [${model}] ${prompt}`);
   setBusy(true);
 }
 
 // Survives the panel closing, which Chrome does on every window switch.
 modelEl.addEventListener("change", () => chrome.storage.local.set({ model: modelEl.value }));
+profileEl.addEventListener("change", () => chrome.storage.local.set({ profile: profileEl.value }));
 
 runBtn.addEventListener("click", runTask);
 stopBtn.addEventListener("click", () => {
@@ -269,8 +277,9 @@ document.getElementById("ping").addEventListener("click", () => {
 
 log("type a task and hit Run — `await comet.selftest()` in this panel's console checks the tools");
 
-const { token, model } = await chrome.storage.local.get(["token", "model"]);
+const { token, model, profile } = await chrome.storage.local.get(["token", "model", "profile"]);
 if (model) modelEl.value = model;
+if (profile) profileEl.value = profile;
 if (token) {
   connect(token);
 } else {

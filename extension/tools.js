@@ -23,6 +23,8 @@ const TOOLS = {
     return `typed ${text.length} characters into ${ref}`;
   },
   key: ({ name }) => cdp.key(name),
+  upload: ({ path, match }) => cdp.upload(path, match),
+  select: ({ ref, value }) => cdp.select(ref, value),
 };
 
 export async function runTool(name, args) {
@@ -31,5 +33,20 @@ export async function runTool(name, args) {
   // The agent has no attach tool and should not need one: whichever tool runs
   // first takes the active tab.
   if (cdp.state().tabId === null) await cdp.attach();
-  return String((await tool(args ?? {})) ?? "ok");
+  try {
+    return String((await tool(args ?? {})) ?? "ok");
+  } catch (err) {
+    // A stale/unknown ref used to cost a whole model turn to recover from:
+    // click -> stale -> snapshot -> click. Handing back the fresh page with
+    // the error means the model can act correctly on its NEXT turn instead
+    // of spending one just re-snapshotting.
+    if (!/stale ref|unknown ref/.test(err.message)) throw err;
+    let page;
+    try {
+      page = await cdp.snapshot();
+    } catch {
+      throw err; // recovery itself failed — surface the real problem, not this one
+    }
+    throw new Error(`${err.message}\n\nthe page as it is now:\n${page}`);
+  }
 }

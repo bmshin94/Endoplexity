@@ -319,6 +319,142 @@ export async function key(name, options) {
   return snapshot(options);
 }
 
+/**
+ * Set a file on a page's file input by filesystem path — no ref, deliberately.
+ *
+ * Job forms (Greenhouse, Lever, Ashby) hide <input type=file> behind a styled
+ * button or dropzone, so the input is frequently missing from the AX tree
+ * entirely — there is no ref to hand this on exactly the sites that matter.
+ * DOM.setFileInputFiles works on a hidden input and fires a real change
+ * event, which is what those forms listen for. No ref also means nothing
+ * here can go stale.
+ */
+export async function upload(path, match, options) {
+  requireAttached();
+  const hits = [];
+  for (const [sessionId, frame] of sessions) {
+    try {
+      const { root } = await send(sessionId, "DOM.getDocument", { depth: 0 });
+      const { nodeIds } = await send(sessionId, "DOM.querySelectorAll", {
+        nodeId: root.nodeId,
+        selector: "input[type=file]",
+      });
+      for (const nodeId of nodeIds) {
+        const { attributes } = await send(sessionId, "DOM.getAttributes", { nodeId });
+        const attrs = {};
+        for (let i = 0; i < attributes.length; i += 2) attrs[attributes[i]] = attributes[i + 1];
+        hits.push({ sessionId, nodeId, label: attrs["aria-label"] ?? attrs.name ?? attrs.id ?? attrs.accept ?? "(unlabelled)" });
+      }
+    } catch (err) {
+      // Frames come and go; one dead frame must not kill the whole operation.
+      console.warn(`comet: upload scan skipped frame ${frame.tag}`, err);
+    }
+  }
+
+  if (hits.length === 0) {
+    throw new Error("no file input on this page — the upload control may be behind a button that has to be clicked first");
+  }
+
+  // Greenhouse's standard form carries a "Resume/CV" AND a "Cover Letter"
+  // input, so first-wins on its own would make the second permanently
+  // unreachable — and the "others:" line below would be reporting a choice
+  // the model has no way to make.
+  const wanted = match?.trim().toLowerCase();
+  const pool = wanted ? hits.filter((h) => h.label.toLowerCase().includes(wanted)) : hits;
+  if (!pool.length) {
+    throw new Error(`no file input matching "${match}" — found: ${hits.map((h) => h.label).join(", ")}`);
+  }
+
+  const [chosen, ...rest] = pool;
+  await send(chosen.sessionId, "DOM.setFileInputFiles", { files: [path], nodeId: chosen.nodeId });
+  console.log(`comet: upload "${path}" -> input "${chosen.label}"`);
+  await settle();
+  const page = await snapshot(options);
+  // "succeeded" said plainly, because the page below often contradicts it: a
+  // React form re-renders its attach UI after settle()'s 300ms, so a Greenhouse
+  // upload that worked hands back a page still reading "No file chosen".
+  // Measured 2026-08-04. Without this line the agent reads its own success as a
+  // failure and retries — the trap the whole "actions return the page" design
+  // already walked into once.
+  let prefix = `set "${path}" on file input "${chosen.label}" — succeeded; the page below may still show the old state for a moment`;
+  if (rest.length) {
+    prefix += ` (first of ${pool.length} — others: ${rest.map((h) => h.label).join(", ")}; pass match to pick one)`;
+  }
+  return `${prefix}\n${page}`;
+}
+
+/**
+ * Runs INSIDE the page via Runtime.callFunctionOn (see select() below) — never
+ * called locally, only stringified, so DOM globals here are fine unresolved.
+ */
+function pickOption(value) {
+  // String(), not .toLowerCase() on the raw value: a ref can resolve to a node
+  // with no tagName at all, and throwing in here surfaces as an exception the
+  // caller reads as success — see select()'s exceptionDetails check.
+  const tag = this.tagName;
+  // Greenhouse, Lever and Ashby all use a custom combobox — an <input> plus a
+  // flyout listbox — not a native <select>, so this is the COMMON case on real
+  // ATS forms, not an edge case. click() drives those fine (the flyout's
+  // options land in the AX tree with their own refs), so the error hands back
+  // the recovery instead of just refusing.
+  if (tag !== "SELECT") {
+    return `error: not a <select> — got ${String(tag).toLowerCase()}. This is a custom combobox: click this ref to open its flyout, then click the option you want in the page that comes back. Typing into it first usually filters a long list.`;
+  }
+  const target = String(value).trim();
+  const opts = [...this.options];
+  let match = opts.find((o) => o.value === target);
+  if (!match) match = opts.find((o) => o.text.trim() === target);
+  if (!match) {
+    const needle = target.toLowerCase();
+    match = opts.find((o) => o.text.trim().toLowerCase().includes(needle));
+  }
+  if (!match) {
+    const available = opts.map((o) => o.text.trim()).slice(0, 20).join(", ");
+    return `error: no option matching "${target}" — available: ${available}`;
+  }
+  this.selectedIndex = match.index;
+  // React listens for one, plain forms for the other — fire both.
+  this.dispatchEvent(new Event("input", { bubbles: true }));
+  this.dispatchEvent(new Event("change", { bubbles: true }));
+  return match.text.trim();
+}
+
+/**
+ * Choose an option in a native <select> by value or visible text.
+ *
+ * A native select's popup is rendered by the BROWSER, not the renderer, so
+ * Input.dispatchMouseEvent — hit-tested by the renderer — can never land on
+ * an option inside it. click() cannot drive a dropdown at all; this is the
+ * only route: set selectedIndex directly from inside the page and fire the
+ * events a dropdown listener actually waits for.
+ */
+export async function select(ref, value, options) {
+  const { sessionId, backendNodeId } = resolve(ref);
+  const { object } = await send(sessionId, "DOM.resolveNode", { backendNodeId });
+  const { result, exceptionDetails } = await send(sessionId, "Runtime.callFunctionOn", {
+    objectId: object.objectId,
+    functionDeclaration: pickOption.toString(),
+    arguments: [{ value }],
+    returnByValue: true,
+  });
+
+  // A throw inside the page leaves `result` holding the exception and `value`
+  // undefined, which would otherwise read as success and hand back a page with
+  // the dropdown silently unset — a required field left blank on a form the
+  // agent then submits. Fail loudly instead.
+  if (exceptionDetails) {
+    throw new Error(`select failed inside the page: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
+  }
+
+  const outcome = result.value;
+  if (typeof outcome === "string" && outcome.startsWith("error:")) {
+    throw new Error(outcome.slice("error: ".length));
+  }
+  console.log(`comet: select ${ref} -> "${outcome}"`);
+  await settle();
+  return snapshot(options);
+}
+
 /** What is attached right now — for eyeballing state from the console. */
 export const state = () => ({
   tabId,

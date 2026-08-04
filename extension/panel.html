@@ -47,7 +47,7 @@
       button { cursor: pointer; }
       button:hover:not(:disabled) { background: var(--edge); }
       button:disabled { opacity: 0.4; cursor: default; }
-      #prompt { resize: vertical; width: 100%; box-sizing: border-box; }
+      #prompt, #profile { resize: vertical; width: 100%; box-sizing: border-box; }
       .row { display: flex; gap: 6px; }
       .row button { flex: 1; }
       /* The dropdown keeps its own width so the three buttons stay equal. */
@@ -86,6 +86,15 @@
       <input id="token" type="password" autocomplete="off" spellcheck="false" />
       <button id="save">Save &amp; connect</button>
     </div>
+
+    <details>
+      <summary>Profile</summary>
+      <textarea id="profile" rows="4" spellcheck="false" placeholder="Name: Ada Lovelace
+Email: ada@example.com
+Phone: +1 555 0100
+Location: Remote
+Work authorisation: US citizen"></textarea>
+    </details>
 
     <textarea id="prompt" rows="2" spellcheck="false"
       placeholder="go to google.com, search for cats, open the first result"></textarea>
