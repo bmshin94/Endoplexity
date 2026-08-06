@@ -245,8 +245,6 @@ async function runChecks(check, skip, filePath) {
     "reading on returns refs the first page did not",
     [...refsIn(rest)].some((ref) => !refsIn(head).has(ref)) ? null : "same refs as the first page",
   );
-
-  return report(results, skips);
 }
 
 /**

@@ -67,12 +67,17 @@ NOT here; they get their own build phase.
 | `use_tab` | `{id}` switch (detach→attach), `{url}` open-and-switch |
 | `snapshot from:` | `serialize()` builds every line then slices; the notice names the next call |
 
-**Verified:** `npm test` 54/54 (4 new pagination tests, one of which caught a negative
-line count that pointed the agent at a page past the end). All 13 tools list over `/mcp`,
-HTTP 200, schemas correct. **Not yet run:** `selftest()`'s 15 new checks and the cost
-number — both need Chrome and a human. The likeliest failure is the no-ref `scroll`: it
-aims at the viewport centre, which on the fixture is inside the OOPIF, and it relies on
-Chrome bubbling an unconsumed wheel out of the frame to the parent document.
+**Verified live 2026-08-06 — `selftest()` 28/28, 1 skipped** (upload happy path, no file
+given). All 15 new checks pass in Chrome: hover reveals a `display:none` item, a wheel
+loads a button that was not in the DOM, back/forward land on the right pages, `use_tab`
+opens/switches/returns a page, and `from:` reads past the cap with refs the first page did
+not carry. Plus `npm test` 54/54 (4 new pagination tests, one of which caught a negative
+line count that pointed the agent at a page past the end) and all 13 tools listing over
+`/mcp`, HTTP 200.
+
+The no-ref `scroll` was flagged as the likeliest failure — it aims at the viewport centre,
+which on the fixture lands **inside the OOPIF** — and it passed: Chrome bubbles an
+unconsumed wheel out of the frame to the parent document. One less thing to design around.
 
 **Still open — the phase gate:** **one real form fill measured end to end** ($ / tokens /
 turns) against P3's google baseline of $0.0984 / 111,872 tokens / 9 turns. Procedure is in
@@ -152,6 +157,21 @@ rise as regression.
 - **A tab Chrome has just created reports `url: ""`** and carries the real one in
   `pendingUrl` until the navigation commits — reading `.url` there rejects every new tab as
   undrivable. `useTab` checks the url string it was handed instead.
+- **A tab's first navigation away from the initial empty document REPLACES that entry**
+  rather than pushing one, so a history built through `about:blank` can have nothing to go
+  back to. `pickTab()` opens tabs at `about:blank`, so this bites here specifically — the
+  self-test's back/forward check moves between two served pages instead. Likely cause of the
+  first live failure, not isolated: the CDP rewrite below landed in the same change.
+- **`chrome.tabs.goBack` reports "Cannot find a next page in history." for going BACK too** —
+  Chromium reuses one string for both directions — and the API takes no argument, so the
+  failure names nothing. `go()` reads `Page.getNavigationHistory` and drives
+  `navigateToHistoryEntry`, and its error prints the whole entry list.
+- **A wheel event unconsumed inside an OOPIF bubbles out to the parent document.** Measured:
+  the no-ref `scroll` aims at the viewport centre, which on the fixture is inside the
+  cross-origin frame, and it still scrolled the host page. No frame-aware aiming needed.
+- **A self-test that can throw must not report by returning.** A stack trace replaced the
+  entire PASS/FAIL list once, hiding 27 passing checks — unreadable as working or broken,
+  which is worse than a FAIL. `runChecks` throws, `selftest` catches and always reports.
 - **Both CLIs report the session id as `session_id`**, cursor included, despite its flag being
   spelled `--resume [chatId]`. `index.ts` reads three spellings as cheap insurance.
 - **A fresh claude run's init lists only `["ToolSearch"]`** — MCP tools show up in a later or
