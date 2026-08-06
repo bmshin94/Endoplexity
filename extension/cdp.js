@@ -97,13 +97,31 @@ const DRIVABLE = /^(https?|file):/;
  * with "Cannot access a chrome:// URL" and cannot even be navigated away from.
  * Fall back to another drivable tab in the window, and open one if there is none.
  */
+const findDrivable = (tabs) =>
+  tabs.find((t) => t.active && DRIVABLE.test(t.url ?? "")) ?? tabs.find((t) => DRIVABLE.test(t.url ?? ""));
+
 async function pickTab() {
-  const tabs = await chrome.tabs.query({ currentWindow: true });
-  const usable = tabs.find((t) => t.active && DRIVABLE.test(t.url ?? "")) ?? tabs.find((t) => DRIVABLE.test(t.url ?? ""));
+  const usable = findDrivable(await chrome.tabs.query({ currentWindow: true }));
   if (usable) return usable.id;
   // No wait: about:blank is already loaded, and navigate() waits for its own.
   const opened = await chrome.tabs.create({ url: "about:blank", active: true });
   return opened.id;
+}
+
+/**
+ * The page the agent is about to work on, for the task prompt to name — or null
+ * if nothing drivable is open yet.
+ *
+ * Goes through the same picker `attach()` does rather than reading the active
+ * tab, because the two disagreeing is worse than having no context at all: the
+ * prompt would name one page while every tool call landed on another. Unlike
+ * `pickTab()` this never opens a tab — building a prompt must not have side
+ * effects, and a run with no page to drive should say so, not invent one.
+ */
+export async function currentPage() {
+  const tab =
+    tabId !== null ? await chrome.tabs.get(tabId) : findDrivable(await chrome.tabs.query({ currentWindow: true }));
+  return tab ? { url: tab.url ?? "", title: tab.title ?? "" } : null;
 }
 
 /** Attach to a tab (defaults to a drivable one) and wire up OOPIF discovery. */

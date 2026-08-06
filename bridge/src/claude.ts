@@ -7,23 +7,32 @@ import { fileURLToPath } from "node:url";
 const CONFIG_PATH = fileURLToPath(new URL("../../.comet-mcp.json", import.meta.url));
 
 /**
- * Three habits the Phase 2 run paid for, corrected up front. Each costs ~20
- * tokens here — cached after the first turn — against a whole model turn each
- * time it is not said:
+ * Habits real runs paid for, corrected up front. Each costs ~20 tokens here —
+ * cached after the first turn — against a whole model turn each time it is not
+ * said:
  *
  *  1. MCP tools arrive deferred, and the agent discovered them one at a time:
  *     four ToolSearch round trips for five tools. `select:` takes a list.
  *  2. It snapshotted after every action out of habit. The tools now hand the
  *     page back themselves, but the tool description alone did not stop it.
  *  3. It retried the same failing action three times before routing around it.
+ *  4. Given "apply to THIS job" it asked which job and exited, having called
+ *     nothing — it has no way to know a tab is open unless told. The panel now
+ *     names the page in the prompt, and this says to act on it. Measured
+ *     2026-08-06 on a Greenhouse posting: 1 turn, zero tool calls, $0.0064.
+ *  5. Same run asked the user to "share your resume file". It cannot receive
+ *     one, and the upload tool's own description says so — but that description
+ *     only arrives after a ToolSearch this run never made.
  *
  * Deliberately generic — no site names. A prompt that knows about Google is a
  * prompt that is wrong on Greenhouse.
  */
 export const BRIEFING_CORE = [
   "You drive a real web browser.",
+  "The task names the page the user is already looking at — act on that page rather than asking which page they mean.",
   "navigate, click, key, upload and select return the page they produced — never call snapshot after them.",
   "Refs like @f1e7 are only valid on the most recent page you were given.",
+  "You cannot be sent files: upload attaches one the user configured by key, so never ask for a file or a path.",
   "If an action did not do what you expected, take a different route rather than repeating it.",
 ].join(" ");
 

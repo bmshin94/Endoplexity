@@ -132,20 +132,32 @@ function cost(event) {
   return `— ${parts.join(" · ")}`;
 }
 
+// The agent writes markdown, but the log is a <pre> rendered with textContent, so
+// `**bold**` arrives as literal asterisks. Strip the markers rather than rendering
+// HTML: this text carries page content from arbitrary sites and must never reach
+// innerHTML.
+const plain = (text) => String(text).replace(/\*\*(.+?)\*\*/g, "$1");
+
+// Both CLIs emit the final message twice — once as an assistant event, once as
+// the result's summary — which printed every answer to the log twice over.
+let lastSaid = "";
+
 // ponytail: still the readable slice of claude's stream-json, not a renderer.
 // Phase 3 was meant to add a step list; the log already renders each tool call
 // the moment it happens, which is what a step list would have shown. Build the
 // cards when there is something to put on them — status, timing, a retry.
 function describe(event) {
   if (event.type === "assistant") {
-    return (event.message?.content ?? [])
+    const said = (event.message?.content ?? [])
       .map((part) =>
         part.type === "tool_use"
           ? `→ ${part.name.replace("mcp__comet__", "")} ${JSON.stringify(part.input)}`
-          : part.text,
+          : plain(part.text ?? ""),
       )
       .filter(Boolean)
       .join("\n");
+    lastSaid = said;
+    return said;
   }
   // cursor's own tool-call event. Only the start is logged — the completion
   // repeats the args and carries the whole tool result, which is a page.
@@ -168,11 +180,15 @@ function describe(event) {
       : `model: ${event.model ?? "?"} · auth: ${event.apiKeySource ?? "?"}`;
   }
   if (event.type === "retry") return `↻ ${event.reason}`;
-  // `||`, not `??`: cursor can finish a turn with result:"" when the model left
-  // its answer in thinking deltas and emitted no assistant text (measured
-  // 2026-08-04 on composer-2.5). An empty string is not nullish, so `??` printed
-  // a blank line and the run read as having produced nothing at all.
-  if (event.type === "result") return `${event.result || event.subtype}\n${cost(event)}`;
+  // Print the summary only when it says something the assistant event did not.
+  // It usually repeats it verbatim, but not always: cursor can finish a turn with
+  // result:"" after leaving its answer in thinking deltas (measured 2026-08-04 on
+  // composer-2.5), so dropping this text unconditionally would lose the only
+  // copy on some runs. Cost always prints — the phase gate is a number.
+  if (event.type === "result") {
+    const said = plain(event.result ?? "").trim();
+    return said && said !== lastSaid ? `${said}\n${cost(event)}` : cost(event);
+  }
   if (event.type === "done") return event.error ? `failed — ${event.error}` : "task finished";
   if (event.type === "failed") return `failed — ${event.error}`;
   return null;
@@ -245,7 +261,7 @@ function setBusy(on) {
 }
 
 /** Run is a fresh conversation; Reply continues the last one. */
-function runTask(resume = false) {
+async function runTask(resume = false) {
   // The console path shares this, so the guard has to live here rather than on
   // the button — otherwise comet.task() twice gets a "already running" failure
   // back and that clears the busy state out from under the task still going.
@@ -259,23 +275,42 @@ function runTask(resume = false) {
   // send the agent an answer it never asked for.
   if (resume && !typed) return log("type your answer first");
   const prompt = typed || promptEl.placeholder;
+
+  // Claim the slot before the await below, or a second Run lands in the window
+  // where the guard has passed but nothing is disabled yet.
+  setBusy(true);
+
+  // "Apply to THIS job" is unanswerable unless the task says which page this is.
+  // Without it the agent asked for a URL instead of acting — it has no way to
+  // know a tab is even open. Naming the page is what makes a Comet-style command
+  // resolve at all. Skipped on a reply: it is already in the transcript, and the
+  // agent has been looking at that page ever since.
+  const page = resume ? null : await cdp.currentPage().catch(() => null);
   // On a reply the profile is already in the transcript the agent is resuming,
   // and re-appending it would re-send the same personal data every turn.
   const profile = resume ? "" : profileEl.value.trim();
-  // The bridge gets `sent` (prompt + profile); the log below stays on `prompt`
-  // alone. Profile is personal data — name, email, phone — and the log is what
-  // gets pasted into bug reports and phase write-ups. Do not "simplify" this to
-  // log `sent` — that would leak it into every paste.
-  const sent = profile ? `${prompt}\n\nApplicant details:\n${profile}` : prompt;
+  // The bridge gets `sent`; the log below stays on `prompt` alone. Profile is
+  // personal data — name, email, phone — and the log is what gets pasted into
+  // bug reports and phase write-ups. Do not "simplify" this to log `sent` —
+  // that would leak it into every paste.
+  const sent = [
+    page && `The page you are on is "${page.title}" — ${page.url}`,
+    prompt,
+    profile && `Applicant details:\n${profile}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   // The model rides along, but the bridge overrules it on a reply: a claude
   // transcript cannot be handed to cursor-agent.
   const model = modelEl.value;
-  if (!send({ type: "task", prompt: sent, model, resume })) return; // still idle, buttons stay live
+  if (!send({ type: "task", prompt: sent, model, resume })) return setBusy(false);
   log(`${resume ? "↩" : "▶"} [${model}] ${prompt}`);
+  // The URL is worth showing: it is the difference between a task the agent can
+  // act on and one it can only ask about.
+  if (page) log(`   on ${page.url}`);
   // Only on a reply — a re-read task is worth keeping in the box, a re-sent
   // answer is just the same answer twice.
   if (resume) promptEl.value = "";
-  setBusy(true);
 }
 
 // Survives the panel closing, which Chrome does on every window switch.
