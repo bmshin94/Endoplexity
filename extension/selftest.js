@@ -10,6 +10,9 @@
 import * as cdp from "./cdp.js";
 
 const FIXTURE = "http://127.0.0.1:8787/fixtures/host.html";
+// The page host.html embeds, loaded top-level here purely as a second real URL
+// for the history checks to move between.
+const FORM = "http://localhost:8787/fixtures/form.html";
 const FIELDS = [
   ["First name", "Ada"],
   ["Last name", "Lovelace"],
@@ -29,12 +32,28 @@ async function throws(fn, needle) {
   }
 }
 
+/**
+ * A throw anywhere in the checks used to take the whole report with it: the
+ * console printed one red stack trace and nothing else, so every check that had
+ * already PASSED was invisible and the run could not be read as working or
+ * broken — which is worse than a plain FAIL. The checks run inside this, and
+ * whatever they got through is printed either way.
+ */
 export async function selftest(filePath) {
   const results = [];
   const skips = [];
   const check = (label, detail) => results.push({ ok: !detail, label, detail: detail ?? "" });
   const skip = (label, reason) => skips.push({ label, reason });
 
+  try {
+    await runChecks(check, skip, filePath);
+  } catch (err) {
+    check(`the self-test stopped early — ${err.message}`, "every check below this point never ran");
+  }
+  return report(results, skips);
+}
+
+async function runChecks(check, skip, filePath) {
   // Not the active tab. The panel is normally opened from chrome://extensions,
   // which is closed to chrome.debugger, so the self-test died on "Cannot access
   // a chrome:// URL" before testing anything. attach() already knows how to pick
@@ -68,13 +87,13 @@ export async function selftest(filePath) {
     "fields live in a child frame, not f0",
     refs.every((r) => r && !r.startsWith("@f0")) ? null : `refs ${refs} came from the main frame`,
   );
-  if (!refs.every(Boolean)) return report(results, skips);
+  if (!refs.every(Boolean)) return;
 
   for (const [i, [, value]] of FIELDS.entries()) await cdp.type(refs[i], value);
 
   const cont = refFor(snap, "button", "Continue");
   check("Continue button found", cont ? null : "no Continue button in the snapshot");
-  if (!cont) return report(results, skips);
+  if (!cont) return;
 
   // Continue hides step 1 and reveals step 2 — the dropdown, the resume button
   // and Submit Application do not exist until this click. This is what actually
@@ -85,7 +104,7 @@ export async function selftest(filePath) {
   let submit = refFor(snap, "button", "Submit Application");
   const select = refFor(snap, "combobox", "Source");
   check("step 2 revealed after Continue", submit && select ? null : `submit=${submit} select=${select}`);
-  if (!submit || !select) return report(results, skips);
+  if (!submit || !select) return;
 
   check(
     "select rejects a nonsense value and lists the options",
@@ -189,13 +208,19 @@ export async function selftest(filePath) {
     skip("ref-scoped scroll", "no decoy button in the snapshot to scope to");
   }
 
-  await cdp.navigate("about:blank");
+  // Two real http pages, not about:blank. A tab's FIRST navigation away from the
+  // initial empty document replaces that entry instead of pushing one, so a
+  // history built through about:blank can leave nothing to go back to — which is
+  // exactly what the first live run hit. Navigating between two served pages
+  // pushes an entry every time, so this check tests back/forward rather than
+  // Chrome's initial-entry rules.
+  await cdp.navigate(FORM);
   page = await cdp.go("back");
-  check("back returns to the previous page", page.includes("Apply for this job") ? null : "did not land on the fixture");
+  check("back returns to the previous page", page.includes("Apply for this job") ? null : "did not land on the host page");
   page = await cdp.go("forward");
   check(
     "forward returns to the page back left",
-    page.includes("Apply for this job") ? "still on the fixture" : null,
+    page.includes("Apply for this job") ? "went back to the host page instead" : null,
   );
 
   const home = cdp.state().tabId;

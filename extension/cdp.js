@@ -176,23 +176,35 @@ export async function navigate(url) {
 /**
  * Walk the tab's own session history and return the page that lands.
  *
- * chrome.tabs.goBack/goForward rather than CDP's Page.navigateToHistoryEntry:
- * the tab API already knows the tab's history and rejects with a readable
- * "Cannot find a previous page" at the end of it, which reaches the model as a
- * tool error it can act on. Doing it over CDP would mean fetching the entry
- * list and picking an index — more code for the same move.
+ * Page.getNavigationHistory + navigateToHistoryEntry, NOT chrome.tabs.goBack.
+ * The tab API takes no argument and reports every refusal as the same opaque
+ * "Cannot find a next page in history." — for going BACK as well as forward,
+ * since Chromium reuses one error string for both. That told us nothing about
+ * why, and it is the message this self-test actually hit. The entry list is
+ * what devtools' own back button drives, it costs one extra call on the session
+ * we already own, and it lets the failure name the whole history — so a run
+ * that cannot go back says what it can see instead of leaving it to guesswork.
  *
  * Named `go`, not `history`, because a module-level `history` would shadow the
  * global one for the whole file.
  */
 export async function go(direction, options) {
   requireAttached();
+  const { currentIndex, entries } = await send(MAIN, "Page.getNavigationHistory");
+  const target = entries[currentIndex + (direction === "forward" ? 1 : -1)];
+  if (!target) {
+    const where = direction === "forward" ? "end" : "start";
+    throw new Error(
+      `cannot go ${direction} — already at the ${where} of this tab's history, ` +
+        `entry ${currentIndex + 1} of ${entries.length}: ${entries.map((e) => e.url).join(" → ")}`,
+    );
+  }
   // Listener first, same reason navigate() does it: a bfcache restore can finish
   // before we would hear about it.
   const ready = loaded(tabId, 10_000);
-  await (direction === "forward" ? chrome.tabs.goForward(tabId) : chrome.tabs.goBack(tabId));
+  await send(MAIN, "Page.navigateToHistoryEntry", { entryId: target.id });
   await ready;
-  console.log(`comet: went ${direction}`);
+  console.log(`comet: went ${direction} to ${target.url}`);
   return snapshot(options);
 }
 
