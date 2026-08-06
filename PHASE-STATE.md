@@ -56,20 +56,30 @@ continues the last conversation instead of starting a new one. Panel console:
 on any site. Frontend, permissions, design, Obsidian memory and open-sourcing are explicitly
 NOT here; they get their own build phase.
 
-The tool layer registers 7 tools and a human has more. Ordered by what actually blocks a real
-page today:
+**Built (2026-08-06), 7 tools → 13.** All five gaps closed, plus cap pagination:
 
-| gap | consequence |
+| tool | how |
 |---|---|
-| **scroll** | anything below the fold is unreachable, and `ax.js:125` already tells the model to "scroll or narrow the page" — an instruction it cannot follow |
-| **cap pagination** | the 300-line cap truncates with no cursor; Greenhouse's country flyout hit it at 307 |
-| **back / forward** | no history, so a wrong click is a dead end |
-| **hover** | hover-open menus unreachable |
-| **tabs** — list/switch/open | one tab only, and a click that opens a new tab returns the old page |
+| `scroll` | `Input.dispatchMouseEvent` `mouseWheel`, 0.8 screenful. Same session rule as click. Optional ref scopes it to that element's scroller |
+| `hover` | `mouseMoved` at `centreOf(ref)` |
+| `back` / `forward` | `chrome.tabs.goBack/goForward` + `loaded()` |
+| `tabs` | `chrome.tabs.query` filtered by `DRIVABLE`, `*` marks attached. The one tool that returns no page |
+| `use_tab` | `{id}` switch (detach→attach), `{url}` open-and-switch |
+| `snapshot from:` | `serialize()` builds every line then slices; the notice names the next call |
 
-**Done when:** each gap has a tool plus a `selftest()` check, and **one real form fill is
-measured end to end** ($ / tokens / turns) against P3's google baseline of $0.0984 / 111,872
-tokens / 9 turns. That number is the phase gate — this phase is about cost as much as reach.
+**Verified:** `npm test` 54/54 (4 new pagination tests, one of which caught a negative
+line count that pointed the agent at a page past the end). All 13 tools list over `/mcp`,
+HTTP 200, schemas correct. **Not yet run:** `selftest()`'s 15 new checks and the cost
+number — both need Chrome and a human. The likeliest failure is the no-ref `scroll`: it
+aims at the viewport centre, which on the fixture is inside the OOPIF, and it relies on
+Chrome bubbling an unconsumed wheel out of the frame to the parent document.
+
+**Still open — the phase gate:** **one real form fill measured end to end** ($ / tokens /
+turns) against P3's google baseline of $0.0984 / 111,872 tokens / 9 turns. Procedure is in
+`docs/handrun.md` ("The cost number"). The six new tools add **~666 tokens of schema per
+turn** (~1,742 for all 13, measured off the real `tools/list`) — at 9 turns that is ~6k
+tokens the baseline did not pay, so the comparison has to account for it rather than read a
+rise as regression.
 
 ## Carried forward — still open
 
@@ -78,8 +88,10 @@ tokens / 9 turns. That number is the phase gate — this phase is about cost as 
 - **Panel profile field is over-fitted to job applications** — generic prompt-context in a
   job-shaped costume. Generalise (a "what Comet knows about me" store, per the user's
   Obsidian-folder idea) or drop it.
-- **The agent's markdown still renders raw** (`**bold**`) into a `<pre>`: replying is now
-  possible, reading the question comfortably is not.
+- **The log is a `<pre>`, not a renderer.** `panel.js`'s `plain()` strips `**bold**` markers,
+  so that specific eyesore is gone, but lists, headings and code fences still arrive as raw
+  markdown. Deliberately not innerHTML — this text carries page content from arbitrary sites.
+  Phase 9.
 
 ## Remaining phases
 
@@ -102,7 +114,16 @@ tokens / 9 turns. That number is the phase gate — this phase is about cost as 
   on the frame's own — events sent to the main session are hit-tested by the root renderer and
   never cross into an OOPIF, so no coordinate translation exists anywhere
 - **Actions return the page they produced.** A separate `snapshot` is a whole model turn, and a
-  turn re-sends everything. `type` is the deliberate exception
+  turn re-sends everything. `type` is the deliberate exception — and so is `tabs`, which is
+  orientation, not an action, and must not pay for a page the agent may not switch to
+- **Scrolling is a real wheel event, not `window.scrollBy`.** Trusted, so an infinite feed's
+  IntersectionObserver fires; hit-tested at a point, so a wheel over an open combobox scrolls
+  the flyout rather than the document behind it. `scrollBy` does neither
+- **Switching tabs is detach-then-attach, so every ref dies.** Only one debugger per tab and
+  cdp.js tracks one — refs belong to the old renderer and would resolve to nothing. `use_tab`
+  checks drivability BEFORE detaching, or a bad id costs the good attachment
+- **Refs are minted during the AX walk, before the line window is cut.** So a ref only visible
+  on a later `from:` page still resolves on the first, and re-reading renumbers nothing
 - **`upload` takes a configured key and no ref.** `DOM.setFileInputFiles` runs in the browser
   process and can read anything, so a model-chosen path is exfiltration; and the real input is
   hidden and absent from the AX tree (measured on Greenhouse — only "Attach" buttons show)
@@ -120,8 +141,17 @@ tokens / 9 turns. That number is the phase gate — this phase is about cost as 
 ## Gotchas
 
 - **Never rotate `.comet-token` or `.comet-files.json` without asking.**
-- **`ax.js:125` tells the model to "scroll or narrow the page" and no scroll tool exists.**
-  Any truncation message must only name a recovery the agent can actually perform — phase 7.
+- **The AX tree is the whole document, not the viewport, and `click` already calls
+  `DOM.scrollIntoViewIfNeeded`.** So "below the fold" was never unreachable — phase 7's gap
+  table said it was and the code disagreed. What scroll actually buys is content not in the
+  DOM yet (infinite feeds, lazy lists) and scrolling an open flyout instead of the page
+  behind it. Don't re-derive this from the symptom.
+- **A truncation or error message must only name a recovery the agent can perform.** The old
+  cap notice said "scroll or narrow the page" — it could do neither. It now names the literal
+  next call, `snapshot with from: N`.
+- **A tab Chrome has just created reports `url: ""`** and carries the real one in
+  `pendingUrl` until the navigation commits — reading `.url` there rejects every new tab as
+  undrivable. `useTab` checks the url string it was handed instead.
 - **Both CLIs report the session id as `session_id`**, cursor included, despite its flag being
   spelled `--resume [chatId]`. `index.ts` reads three spellings as cheap insurance.
 - **A fresh claude run's init lists only `["ToolSearch"]`** — MCP tools show up in a later or
@@ -133,7 +163,8 @@ tokens / 9 turns. That number is the phase gate — this phase is about cost as 
 - **Real ATS dropdowns are not `<select>`.** Greenhouse/Lever/Ashby use an `<input>` plus a
   flyout listbox, so `select` refuses them: `click` the combobox → options appear in the AX
   tree with refs → `click` the option. Greenhouse's country flyout returns **307 lines** and
-  hits the 300-line cap, so type into it to filter first.
+  hits the 300-line cap — type into it to filter, or `snapshot from: 300`. Note `from` applies
+  **per frame**, since the cap always did.
 - **A successful upload hands back a page that looks like it failed.** React re-renders the
   attach UI after `settle()`'s 300ms, so Greenhouse still read "No file chosen" right after the
   file landed. The return line says "succeeded" first for exactly this reason.

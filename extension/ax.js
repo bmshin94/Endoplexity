@@ -74,24 +74,24 @@ function valueOf(node) {
  * @param frame  frame tag, e.g. "f0" for the main frame — refs come out as @f0e3
  * @param full   keep body prose too. Off by default: the model pays for this on
  *               every later turn, so reading tasks opt in rather than opt out
+ * @param from   first line to return, for reading past the cap
  * @returns {{ text: string, refs: Map<string, number> }} refs map to backend DOM node ids
  */
-export function serialize(nodes, frame, { maxLines = 300, full = false } = {}) {
+export function serialize(nodes, frame, { maxLines = 300, full = false, from = 0 } = {}) {
   const byId = new Map(nodes.map((n) => [n.nodeId, n]));
   const isChild = new Set(nodes.flatMap((n) => n.childIds ?? []));
   const roots = nodes.filter((n) => !isChild.has(n.nodeId));
 
-  const lines = [];
+  // Every kept line, before the window is cut out of it. Building the whole list
+  // and slicing is what makes `from` possible at all, and costs nothing the walk
+  // was not already paying: the tree is traversed in full either way.
+  const all = [];
   const refs = new Map();
   let seq = 0;
-  let dropped = 0;
 
   // One space per level, not two: indentation is relative, so half of it was
   // pure width. On a deep page that was a few hundred tokens of nothing.
-  const emit = (line, depth) => {
-    if (lines.length >= maxLines) return void dropped++;
-    lines.push(" ".repeat(Math.min(depth, 8)) + line);
-  };
+  const emit = (line, depth) => all.push(" ".repeat(Math.min(depth, 8)) + line);
 
   const walk = (node, depth, announced) => {
     if (!node) return;
@@ -120,9 +120,24 @@ export function serialize(nodes, frame, { maxLines = 300, full = false } = {}) {
   };
 
   for (const root of roots) walk(root, 0, "");
-  // ponytail: hard cap, no pagination. Add a cursor when a real page actually
-  // overflows 300 kept nodes and the tail turns out to matter.
-  if (dropped) lines.push(`… ${dropped} more nodes hidden (cap ${maxLines}) — scroll or narrow the page`);
+
+  // Refs are minted during the walk, above, and every one of them is in the map
+  // regardless of which window is returned. So a hidden line's ref is still
+  // usable, and re-reading at a different `from` renumbers nothing — the walk is
+  // deterministic, so @f0e17 means the same node in every page of the same read.
+  const start = Math.max(0, Math.trunc(from) || 0);
+  const lines = all.slice(start, start + maxLines);
+  // Clamped: a `from` past the end makes this negative, which printed
+  // "… -949 more lines below" and pointed the agent at a further page that does
+  // not exist — a loop it has no reason to break out of.
+  const below = Math.max(0, all.length - start - lines.length);
+
+  // Greenhouse's country flyout is 307 lines into a 300 cap, and the old notice
+  // told the model to "scroll or narrow the page" — neither of which it could
+  // do, and neither of which would have helped. A recovery message must name an
+  // action the agent can actually take, so this one names the exact call.
+  if (start) lines.unshift(`… ${start} earlier lines not shown (reading from line ${start})`);
+  if (below) lines.push(`… ${below} more lines below — call snapshot with from: ${start + maxLines} to read on`);
 
   return { text: lines.join("\n"), refs };
 }

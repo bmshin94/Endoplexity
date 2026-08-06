@@ -12,7 +12,7 @@ import * as cdp from "./cdp.js";
 // snapshots, and the page rarely changes between fields. If it does — an
 // autocomplete list, a field that reveals another — the model can still ask.
 const TOOLS = {
-  snapshot: ({ full }) => cdp.snapshot({ full }),
+  snapshot: ({ full, from }) => cdp.snapshot({ full, from }),
   navigate: async ({ url }) => {
     await cdp.navigate(url);
     return cdp.snapshot();
@@ -25,6 +25,15 @@ const TOOLS = {
   key: ({ name }) => cdp.key(name),
   upload: ({ path, match }) => cdp.upload(path, match),
   select: ({ ref, value }) => cdp.select(ref, value),
+  scroll: ({ direction, ref }) => cdp.scroll(direction, ref),
+  hover: ({ ref }) => cdp.hover(ref),
+  back: () => cdp.go("back"),
+  forward: () => cdp.go("forward"),
+  // The one tool here that returns no page: a tab list is orientation, and
+  // paying for a snapshot of a tab the agent may not even switch to is the
+  // opposite of what "actions return the page" is for.
+  tabs: () => cdp.tabs(),
+  use_tab: ({ id, url }) => cdp.useTab(id, url),
 };
 
 export async function runTool(name, args) {

@@ -137,6 +137,90 @@ export async function selftest(filePath) {
   await reloaded;
   check("refs go stale on navigation", await throws(() => cdp.click(submit), "stale ref"));
 
+  // --- reachability (phase 7) ---
+  //
+  // Deliberately after the stale-ref check above, not woven into the form flow.
+  // Every snapshot mints a fresh generation, so a hover or a scroll slipped in
+  // earlier would have made `submit` stale before the reload did — and that
+  // check would then pass without the reload having proved anything.
+  await cdp.navigate(FIXTURE);
+
+  let page = await cdp.snapshot();
+  check(
+    "the hover-only item is absent before hovering",
+    page.includes("Hover-only item") ? "it was in the tree without any hover" : null,
+  );
+  const menu = refFor(page, "button", "Menu");
+  check("hover target found", menu ? null : "no Menu button in the snapshot");
+  if (menu) {
+    page = await cdp.hover(menu);
+    check(
+      "hover reveals a menu item that was not in the tree",
+      page.includes("Hover-only item") ? null : "still absent after hover",
+    );
+  }
+
+  // Not "an element below the fold" — the AX tree already covers the whole
+  // document and click scrolls to its own target. This is content that is not in
+  // the DOM until a real wheel event fires the page's scroll handler, which is
+  // what an infinite feed does and what scrolling-into-view can never reach.
+  check(
+    "the lazy item is absent before scrolling",
+    page.includes("Loaded on scroll") ? "it was in the tree without any scroll" : null,
+  );
+  page = await cdp.scroll("down");
+  check(
+    "scroll loads content that was not in the DOM",
+    page.includes("Loaded on scroll") ? null : "the page's scroll handler never fired",
+  );
+  const decoy = refFor(page, "button", "Decoy button in the main frame");
+  if (decoy) {
+    // The ref-scoped path — the one that scrolls an open dropdown rather than
+    // the document behind it. Nothing to assert about a fixture with no flyout
+    // beyond "it aims and dispatches without throwing".
+    let failure = null;
+    try {
+      await cdp.scroll("up", decoy);
+    } catch (err) {
+      failure = err.message;
+    }
+    check("scroll accepts a ref to scope itself", failure);
+  } else {
+    skip("ref-scoped scroll", "no decoy button in the snapshot to scope to");
+  }
+
+  await cdp.navigate("about:blank");
+  page = await cdp.go("back");
+  check("back returns to the previous page", page.includes("Apply for this job") ? null : "did not land on the fixture");
+  page = await cdp.go("forward");
+  check(
+    "forward returns to the page back left",
+    page.includes("Apply for this job") ? "still on the fixture" : null,
+  );
+
+  const home = cdp.state().tabId;
+  check("tabs stars the attached tab", new RegExp(`\\* id ${home} `).test(await cdp.tabs()) ? null : "not starred");
+
+  page = await cdp.useTab(null, FIXTURE);
+  const opened = cdp.state().tabId;
+  check("use_tab opens a tab and attaches to it", opened !== home ? null : `still on tab ${home}`);
+  check("the opened tab's page comes back", page.includes("Apply for this job") ? null : "no page from the new tab");
+  await cdp.useTab(home);
+  check("use_tab switches back by id", cdp.state().tabId === home ? null : `on tab ${cdp.state().tabId}`);
+  // Or every run of this self-test leaves another tab behind.
+  if (opened !== home) await chrome.tabs.remove(opened);
+
+  await cdp.navigate(FIXTURE);
+  const refsIn = (text) => new Set(text.match(/@\w+e\d+/g) ?? []);
+  const head = await cdp.snapshot({ maxLines: 2 });
+  check("a capped snapshot names the call that reads on", head.includes("from: 2") ? null : "no from: in the notice");
+  const rest = await cdp.snapshot({ maxLines: 2, from: 2 });
+  check("a later page says how far in it starts", rest.includes("earlier lines not shown") ? null : "no marker");
+  check(
+    "reading on returns refs the first page did not",
+    [...refsIn(rest)].some((ref) => !refsIn(head).has(ref)) ? null : "same refs as the first page",
+  );
+
   return report(results, skips);
 }
 

@@ -64,9 +64,15 @@ function build() {
           .boolean()
           .optional()
           .describe("Include body text as well as actionable elements. Much larger — only for reading a page, not acting on it."),
+        from: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Start reading at this line, to see past a page that said it had more lines below. Refs do not change between pages of the same read."),
       },
     },
-    ({ full }) => relay("snapshot", { full }),
+    (args) => relay("snapshot", args),
   );
 
   server.registerTool(
@@ -157,6 +163,70 @@ function build() {
       },
     },
     (args) => relay("select", args),
+  );
+
+  server.registerTool(
+    "scroll",
+    {
+      description:
+        "Scroll the page a screenful and return it afterwards. You do NOT need this to reach something already in the snapshot — click scrolls to its target itself. Use it for content that has not loaded yet (infinite feeds, lazy lists), or pass a ref inside an open dropdown to scroll that dropdown instead of the page behind it.",
+      inputSchema: {
+        direction: z.enum(["down", "up"]).optional().describe("Default down"),
+        ref: z
+          .string()
+          .optional()
+          .describe("Scroll the scrollable area containing this ref, e.g. an open dropdown list, instead of the whole page"),
+      },
+    },
+    (args) => relay("scroll", args),
+  );
+
+  server.registerTool(
+    "hover",
+    {
+      description:
+        "Move the mouse onto an element and return the page afterwards — for menus that open on hover, whose items are absent from the page until then.",
+      inputSchema: { ref: z.string().describe("A ref from the latest snapshot, e.g. @f1e7") },
+    },
+    ({ ref }) => relay("hover", { ref }),
+  );
+
+  server.registerTool(
+    "back",
+    {
+      description: "Go back one page in this tab's history and return the page that lands. Use it to undo a wrong click.",
+      inputSchema: {},
+    },
+    () => relay("back", {}),
+  );
+
+  server.registerTool(
+    "forward",
+    { description: "Go forward one page in this tab's history and return the page that lands.", inputSchema: {} },
+    () => relay("forward", {}),
+  );
+
+  server.registerTool(
+    "tabs",
+    {
+      description:
+        "List the open tabs with their ids; the one you are driving is starred. The only tool that does not return a page. Call it when a click seems to have done nothing — a link that opens a new tab leaves you on the old one.",
+      inputSchema: {},
+    },
+    () => relay("tabs", {}),
+  );
+
+  server.registerTool(
+    "use_tab",
+    {
+      description:
+        "Switch to another tab, or open a new one, and return the page there. Every ref you are holding belongs to the tab you are leaving and stops working — read the page you get back.",
+      inputSchema: {
+        id: z.number().int().optional().describe("An id from tabs()"),
+        url: z.string().url().optional().describe("Open a new tab here instead. Use navigate to move the tab you are already on."),
+      },
+    },
+    (args) => relay("use_tab", args),
   );
 
   return server;

@@ -7,10 +7,25 @@
       body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 640px; }
       iframe { width: 100%; height: 340px; border: 1px solid #ccc; border-radius: 6px; }
       code { background: #eee; padding: 1px 4px; border-radius: 3px; }
+      /* display:none keeps a node out of the accessibility tree entirely, not
+         just off the screen — so the hover item is genuinely absent from a
+         snapshot until the mouse is on the menu. That is the point: the agent
+         cannot click what it cannot see a ref for. */
+      #menu-item { display: none; }
+      #menu:hover + #menu-item { display: inline-block; }
+      /* Tall enough that one wheel event cannot reach the bottom by accident. */
+      #filler { height: 1800px; }
     </style>
   </head>
   <body>
     <h1>Apply for this job</h1>
+
+    <!-- Above the fold on purpose: hover() goes through centreOf(), which scrolls
+         its target into view, and a menu further down would scroll the page as a
+         side effect and trip the lazy-load check below. -->
+    <button id="menu">Menu</button>
+    <button id="menu-item">Hover-only item</button>
+
     <p>
       The form below is served from <code>localhost</code> while this page is served from
       <code>127.0.0.1</code>. Different sites, so Chrome puts the frame in its own renderer —
@@ -23,5 +38,26 @@
     <iframe src="http://localhost:8787/fixtures/form.html" title="Application form"></iframe>
 
     <button id="decoy">Decoy button in the main frame</button>
+
+    <!-- The real reason a scroll tool exists. This button is not in the DOM at
+         all until the page has been scrolled, so it is absent from the tree no
+         matter how far down it would sit — which is what an infinite feed or a
+         lazy-loaded list does, and what scrolling into view cannot fix. -->
+    <div id="filler"></div>
+    <div id="lazy"></div>
+
+    <script>
+      addEventListener(
+        "scroll",
+        () => {
+          if (scrollY <= 100 || document.getElementById("lazy-item")) return;
+          const button = document.createElement("button");
+          button.id = "lazy-item";
+          button.textContent = "Loaded on scroll";
+          document.getElementById("lazy").append(button);
+        },
+        { passive: true },
+      );
+    </script>
   </body>
 </html>

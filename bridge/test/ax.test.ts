@@ -100,12 +100,45 @@ test("survives non-string AX values", () => {
   assert.match(text, /@f0e2 \[checkbox\] "Mute" = "true"/);
 });
 
-test("caps the payload and says how much it hid", () => {
-  const many = [
-    node("1", "RootWebArea", { childIds: Array.from({ length: 50 }, (_, i) => `b${i}`) }),
-    ...Array.from({ length: 50 }, (_, i) => node(`b${i}`, "button", { name: `B${i}`, backendDOMNodeId: i })),
-  ];
-  const lines = serialize(many, "f0", { maxLines: 10 }).text.split("\n");
+const many = () => [
+  node("1", "RootWebArea", { childIds: Array.from({ length: 50 }, (_, i) => `b${i}`) }),
+  ...Array.from({ length: 50 }, (_, i) => node(`b${i}`, "button", { name: `B${i}`, backendDOMNodeId: i })),
+];
+
+test("caps the payload and names the call that reads past the cap", () => {
+  const lines = serialize(many(), "f0", { maxLines: 10 }).text.split("\n");
   assert.equal(lines.length, 11); // 10 kept + the notice
-  assert.match(lines.at(-1)!, /40 more nodes hidden/);
+  assert.match(lines.at(-1)!, /40 more lines below/);
+  // Greenhouse's country flyout overflowed this cap and the notice used to say
+  // "scroll or narrow the page" — neither of which the agent could do. The
+  // recovery it names now has to be a call that exists.
+  assert.match(lines.at(-1)!, /from: 10/);
+});
+
+test("from: reads on where the cap stopped, without renumbering refs", () => {
+  const head = serialize(many(), "f0", { maxLines: 10 });
+  const rest = serialize(many(), "f0", { maxLines: 10, from: 10 });
+
+  assert.match(head.text, /@f0e1 \[button\] "B0"/);
+  assert.doesNotMatch(head.text, /"B10"/);
+  assert.match(rest.text, /@f0e11 \[button\] "B10"/); // e11, not e1 — same node, same ref
+  assert.match(rest.text.split("\n")[0]!, /10 earlier lines not shown/);
+  assert.match(rest.text, /from: 20/);
+
+  // Every ref is minted during the walk, before the window is cut, so a ref the
+  // agent can only see on a later page still resolves on the first one.
+  assert.deepEqual([...head.refs], [...rest.refs]);
+});
+
+test("the last page of a paginated read has no read-on notice", () => {
+  const { text } = serialize(many(), "f0", { maxLines: 10, from: 40 });
+  assert.match(text, /"B49"/);
+  assert.doesNotMatch(text, /more lines below/);
+});
+
+// An out-of-range `from` used to be the obvious way to get an empty page and a
+// tool result that reads as a broken browser rather than a bad argument.
+test("a from past the end returns just the marker, not a crash", () => {
+  const { text } = serialize(many(), "f0", { maxLines: 10, from: 999 });
+  assert.equal(text, "… 999 earlier lines not shown (reading from line 999)");
 });

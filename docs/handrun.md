@@ -25,6 +25,14 @@ dropdown (incl. an option whose markup has stray whitespace, and a nonsense valu
 that must fail with the option list in the error) and the file-upload path (incl.
 a page with no file input at all).
 
+The Phase 7 reachability checks run last, on a fresh load of the same fixture, on
+purpose: every snapshot mints a new ref generation, so a hover or a scroll woven
+into the form flow would make the submit ref stale before the reload does — and
+the stale-ref check would then pass having proved nothing. They cover hover
+revealing a `display:none` menu item, a wheel event loading content that is not in
+the DOM until you scroll, back/forward, opening and switching tabs (the opened tab
+is closed again), and reading past the line cap with `from:`.
+
 Pass a path to also exercise the upload happy path — the panel can't fabricate a
 file on disk, so without one that single check prints as `SKIP`, distinct from
 and not counted against PASS/FAIL:
@@ -51,7 +59,20 @@ console.log(await comet.snapshot({full:true})); // …plus body text
 await comet.type("@f1e1", "Ada");
 console.log(await comet.click("@f1e4"));       // returns the page it produced
 console.log(await comet.key("Enter"));         // so does this
+
+console.log(await comet.hover("@f0e2"));       // hover-open menus
+console.log(await comet.scroll("down"));       // a wheel, so lazy content loads
+console.log(await comet.scroll("down","@f0e9")); // …inside that ref's scroller
+console.log(await comet.go("back"));           // and go("forward")
+console.log(await comet.tabs());               // * marks the attached one
+console.log(await comet.useTab(null, "https://example.com")); // or useTab(id)
+console.log(await comet.snapshot({from: 300})); // read past the 300-line cap
 ```
+
+`scroll` is not how you reach something below the fold — the accessibility tree
+covers the whole document and `click` scrolls to its own target. It is for
+content that is not in the DOM yet (infinite feeds, lazy lists) and for scrolling
+an open dropdown instead of the page behind it.
 
 Refs are `@f<frame>e<n>` and die on the next `snapshot()` or any navigation —
 including the snapshot `click` and `key` take on their way out, so always act on
@@ -93,5 +114,26 @@ Same calls, real page. Only one URL shape exercises the OOPIF path:
 - a careers page embedding `boards.greenhouse.io/embed/job_app?…` in an iframe —
   the real trap, and what `selftest()` reproduces offline.
 
-Don't submit an application you don't mean to send; the approval gate that stops
-that lands in Phase 4.
+Don't submit an application you don't mean to send. The approval gate catches the
+real submit and waits for you — 60 seconds of silence counts as a denial.
+
+## The cost number
+
+The Phase 7 gate is a measurement, not a feature: one real form fill, end to end,
+against Phase 3's google baseline of **$0.0984 / 111,872 tokens / 9 turns**.
+
+Nothing to set up — the panel already prints it. Open the job page, type the task,
+hit **Run**, and read the last line of the log when it finishes:
+
+```
+— $0.1234 · 148,020 tokens · 12 turns · 96s
+```
+
+Two things make that number a lie if you skip them:
+
+- **Start the run fresh** (Run, not Reply). A reply continues a transcript and
+  bills the whole conversation again, so it measures the pair, not the task.
+- **One task per number.** The bridge holds one session; a second Run resets it.
+
+`cursor` reports no price, only tokens — a `$` will simply be missing there
+rather than printed as zero.

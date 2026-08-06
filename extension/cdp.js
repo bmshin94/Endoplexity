@@ -173,6 +173,85 @@ export async function navigate(url) {
   return `navigated to ${url}`;
 }
 
+/**
+ * Walk the tab's own session history and return the page that lands.
+ *
+ * chrome.tabs.goBack/goForward rather than CDP's Page.navigateToHistoryEntry:
+ * the tab API already knows the tab's history and rejects with a readable
+ * "Cannot find a previous page" at the end of it, which reaches the model as a
+ * tool error it can act on. Doing it over CDP would mean fetching the entry
+ * list and picking an index — more code for the same move.
+ *
+ * Named `go`, not `history`, because a module-level `history` would shadow the
+ * global one for the whole file.
+ */
+export async function go(direction, options) {
+  requireAttached();
+  // Listener first, same reason navigate() does it: a bfcache restore can finish
+  // before we would hear about it.
+  const ready = loaded(tabId, 10_000);
+  await (direction === "forward" ? chrome.tabs.goForward(tabId) : chrome.tabs.goBack(tabId));
+  await ready;
+  console.log(`comet: went ${direction}`);
+  return snapshot(options);
+}
+
+/**
+ * The drivable tabs in this window, so a click that opened a new tab is not a
+ * dead end. The attached one is starred — without that the model cannot tell
+ * which of five tabs its refs belong to.
+ *
+ * Filtered by DRIVABLE for the same reason attach() is: offering a chrome://
+ * tab the agent then cannot attach to is worse than not listing it.
+ */
+export async function tabs() {
+  const open = (await chrome.tabs.query({ currentWindow: true })).filter((t) => DRIVABLE.test(t.url ?? ""));
+  if (!open.length) return "no drivable tabs open";
+  return open.map((t) => `${t.id === tabId ? "*" : " "} id ${t.id} — "${t.title ?? ""}" ${t.url}`).join("\n");
+}
+
+/**
+ * Switch to an existing tab by id, or open a new one at a url and switch to it.
+ * Returns the page there, so the agent is never left holding refs from a tab it
+ * has moved off.
+ *
+ * Only one debugger can attach to a tab, and cdp.js tracks exactly one, so
+ * switching is detach-then-attach — which throws away every ref, deliberately:
+ * they belong to the old tab's renderer and would resolve to nothing here.
+ */
+export async function useTab(id, url, options) {
+  requireAttached();
+  const undrivable = (where) =>
+    new Error(`cannot drive ${where} — only http, https and file pages accept the debugger`);
+
+  // Both paths check BEFORE detaching, because attaching to a chrome:// tab
+  // fails and doing that after the detach would leave the agent attached to
+  // nothing while still holding refs it believes are live.
+  //
+  // The url is checked as a string rather than by reading the tab back after
+  // creating it: a tab Chrome has only just opened reports url:"" and carries
+  // the real one in pendingUrl until the navigation commits, so reading .url
+  // there rejects every new tab as undrivable.
+  if (url && !DRIVABLE.test(url)) throw undrivable(url);
+  const target = url ? (await chrome.tabs.create({ url, active: true })).id : id;
+  if (target == null) throw new Error("use_tab needs an id from tabs(), or a url to open");
+  if (!url) {
+    const tab = await chrome.tabs.get(target);
+    if (!DRIVABLE.test(tab.url ?? "")) throw undrivable(`tab ${target} (${tab.url})`);
+  }
+
+  if (target !== tabId) {
+    await detach();
+    await attach(target);
+    await chrome.tabs.update(target, { active: true });
+  }
+  // A freshly created tab is usually still loading; settle() waits on exactly
+  // that and needs no separate path.
+  await settle();
+  console.log(`comet: using tab ${target}`);
+  return snapshot(options);
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -290,6 +369,60 @@ export async function click(ref, options) {
   await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mousePressed", buttons: 1 });
   await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mouseReleased", buttons: 0 });
   console.log(`comet: click ${ref} at ${Math.round(x)},${Math.round(y)}`);
+  await settle();
+  return snapshot(options);
+}
+
+/**
+ * Move the mouse onto an element and return the page it revealed.
+ *
+ * Hover-open menus have no click to drive them: the items simply do not exist
+ * in the DOM (or are display:none, which keeps them out of the AX tree) until
+ * something is hovering. Same session rule as click — a mouseMoved sent to MAIN
+ * is hit-tested by the root renderer and never reaches an OOPIF.
+ */
+export async function hover(ref, options) {
+  const { sessionId } = resolve(ref);
+  const { x, y } = await centreOf(ref);
+  await send(sessionId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
+  console.log(`comet: hover ${ref} at ${Math.round(x)},${Math.round(y)}`);
+  await settle();
+  return snapshot(options);
+}
+
+/**
+ * Scroll the page — or, with a ref, whatever scrollable thing that ref sits in.
+ *
+ * A real wheel event, not window.scrollBy(), for two reasons: it is trusted, so
+ * the IntersectionObserver behind an infinite feed actually fires and appends
+ * the next batch; and it is hit-tested at a point, so a wheel over an open
+ * combobox flyout scrolls the flyout rather than the document behind it. That
+ * second case is the one real ATS forms hit.
+ *
+ * Note this is NOT what makes below-the-fold elements reachable — the AX tree
+ * covers the whole document and centreOf() already scrolls a ref into view
+ * before clicking it. What scrolling buys is content that is not in the DOM yet.
+ */
+export async function scroll(direction = "down", ref, options) {
+  requireAttached();
+  const sessionId = ref ? resolve(ref).sessionId : MAIN;
+  // The frame's own viewport when a ref names one — an OOPIF's metrics are its
+  // own, so a wheel inside it must be aimed and sized in that space.
+  const { cssLayoutViewport: view } = await send(sessionId, "Page.getLayoutMetrics");
+  const at = ref ? await centreOf(ref) : { x: view.clientWidth / 2, y: view.clientHeight / 2 };
+  // Just under a screenful, the way Page Down behaves: a full one can step over
+  // a lazy-load trigger, and the overlap keeps the model oriented between reads.
+  const deltaY = Math.round(view.clientHeight * 0.8) * (direction === "up" ? -1 : 1);
+  await send(sessionId, "Input.dispatchMouseEvent", {
+    type: "mouseWheel",
+    x: at.x,
+    y: at.y,
+    deltaX: 0,
+    deltaY,
+    button: "none",
+    buttons: 0,
+  });
+  console.log(`comet: scroll ${direction} ${deltaY}px at ${Math.round(at.x)},${Math.round(at.y)}`);
   await settle();
   return snapshot(options);
 }
