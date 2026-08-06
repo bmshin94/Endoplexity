@@ -25,44 +25,51 @@ continues the last conversation instead of starting a new one. Panel console:
 - **P3 — token efficiency.** Snapshots default to actionable + headings; actions return the
   page they produced. One google run at **$0.0984 / 111,872 tokens / 9 turns**. Prose-cutting
   alone was **1.5x, not 2x** — the surviving actionable lines are the long ones.
-- **P4 — approval gate.** `gate.ts` is the policy and the only place that decides; `relay()`
-  is the single chokepoint so it cannot be half-wired. 60s silence, no panel, or a panel
-  dropping mid-gate all deny. Approve and deny both verified live.
-- **P5 — Cursor adapter + model picker.** `cursor-agent` native Windows, no WSL, in a
-  bridge-owned profile; model → adapter off an allowlist map. Ran end to end on `composer-2.5`
-  and `cursor-grok-4.5-medium`. Shell denied, `apiKeySource: "login"`.
-- **Session continuity (2026-08-04).** The bridge keeps the CLI session id and `--resume`s it;
-  the panel gains **Reply**, live only when the last run left a transcript. Verified live on
-  *both* CLIs by codeword recall across two separate spawns ($0.0075 on claude), and the
-  resumed claude run's init still lists only `ToolSearch` + `mcp__comet__*` — resume restores
-  the conversation, not reach.
+- **P4 — approval gate.** `gate.ts` is the policy and the only place that decides; `relay()` is
+  the single chokepoint. 60s silence, no panel, or a panel dropping mid-gate all deny. Approve
+  and deny both verified live.
+- **P5 — Cursor adapter + model picker.** `cursor-agent` native Windows in a bridge-owned
+  profile; model → adapter off an allowlist map. Ran end to end on `composer-2.5` and
+  `cursor-grok-4.5-medium`. Shell denied, `apiKeySource: "login"`.
+- **Session continuity.** The bridge keeps the CLI session id and `--resume`s it; the panel
+  gains **Reply**, live only when the last run left a transcript. Verified on both CLIs by
+  codeword recall across two spawns, and a resumed claude run's init still lists only
+  `ToolSearch` + `mcp__comet__*` — resume restores the conversation, not reach.
+- **Page context.** The panel names the current page in every task prompt, read through the
+  same picker `attach()` uses so the two cannot disagree. Without it "apply to *this* job" was
+  unanswerable: the agent asked for a URL and exited at 1 turn having called nothing.
+  `design.md:123` specified this and it had never been built.
+- **P6 — v1, agent-driven form fill (closed 2026-08-06).** `upload` takes a configured KEY and
+  scans every frame's DOM for `input[type=file]` because real ATS forms hide it; `select`
+  drives a native `<select>`; `key: Enter` is gated on irreversible-labelled controls; stale
+  refs return the fresh page so recovery costs no turn. By curl on the real Cloudflare
+  Greenhouse form, `upload` found **both** hidden inputs and **the gate intercepted a real
+  "Submit application" click**. After the page-context fix **the agent drove that form
+  unaided** — first agent-driven completion, user-confirmed. **Rescoped** from "3 real job
+  sites": job-applying is the test case, not the product. **Not measured:** turns, cost, or
+  whether stale-ref recovery and the combobox path fired — the ATS gotchas below are still
+  unproven agent-driven.
 
-## Current phase: 6 — v1, form-fill hardening — **STILL OPEN**
+## Current phase: 7 — reachability: everything a human can do on one page
 
-Built and unit-verified (`npm test` **51/51**, `comet.selftest()` **13/13** incl. upload and
-select against the OOPIF fixture):
+**Goal: master browser control, efficiency and token cost** — match what Comet does, judged
+on any site. Frontend, permissions, design, Obsidian memory and open-sourcing are explicitly
+NOT here; they get their own build phase.
 
-- **`upload(file, match?)`** takes a configured KEY, never a path, and scans every frame's DOM
-  for `input[type=file]` rather than taking a ref: real ATS forms hide the input entirely.
-- **`select(ref, value)`** — native `<select>` via `Runtime.callFunctionOn` + bubbling
-  `input`/`change`. Near-useless on real ATS forms (see gotchas) — click+click is the path.
-- **`key: Enter` gated** on any irreversible-labelled control, and **stale refs return the
-  fresh page** with the error, so recovery costs no turn.
+The tool layer registers 7 tools and a human has more. Ordered by what actually blocks a real
+page today:
 
-**Verified live on the real Cloudflare Greenhouse form (2026-08-04) by driving `/mcp` with
-curl — no model in the loop:** `upload` found **both** hidden file inputs (`resume`,
-`cover_letter`) that the AX tree shows only as "Attach" buttons, `match:"cover"` hitting the
-second; and **the gate intercepted a real "Submit application" click**, denying on the 60s
-timeout so it never reached Chrome.
+| gap | consequence |
+|---|---|
+| **scroll** | anything below the fold is unreachable, and `ax.js:125` already tells the model to "scroll or narrow the page" — an instruction it cannot follow |
+| **cap pagination** | the 300-line cap truncates with no cursor; Greenhouse's country flyout hit it at 307 |
+| **back / forward** | no history, so a wrong click is a dead end |
+| **hover** | hover-open menus unreachable |
+| **tabs** — list/switch/open | one tab only, and a click that opens a new tab returns the old page |
 
-**NOT verified — why the phase is not closed:**
-- **The agent has never completed the task.** Both live runs failed: one stopped to ask for
-  applicant data, one emitted fake `<function_calls>` XML. Every tool result above came from
-  driving MCP by hand. **Done-when says "'Apply with my resume' completes on 3 real job sites"
-  — that has not happened once.** Session continuity removes the *first* failure mode; the
-  next live run tests whether that was enough.
-- **Only 1 site, not 3** (user scoped to Cloudflare 2026-08-04); Lever and Ashby untested, and
-  multi-page untested since the Cloudflare form is single-page.
+**Done when:** each gap has a tool plus a `selftest()` check, and **one real form fill is
+measured end to end** ($ / tokens / turns) against P3's google baseline of $0.0984 / 111,872
+tokens / 9 turns. That number is the phase gate — this phase is about cost as much as reach.
 
 ## Carried forward — still open
 
@@ -78,9 +85,8 @@ timeout so it never reached Chrome.
 
 | # | Deliverable | Done when |
 |---|---|---|
-| 6 | **v1 — form-fill hardening** | *(open)* "Apply with my resume" completes **agent-driven**, incl. upload + multi-page + gated submit |
-| — | **Refinement** | Grounded in what Comet actually does: memory, panel UX, cost |
-| 7 | Multi-tab research | "Compare these 5 laptops" → table in panel |
+| 8 | Multi-tab research | "Compare these 5 laptops" → table in panel |
+| 9 | **Refinement build** | Frontend, permissions, smoothness, design, a real Obsidian-backed memory, and open-source/GitHub readiness. Deliberately its own phase — none of it belongs in 7 or 8 |
 
 ## Decisions locked
 
@@ -114,6 +120,8 @@ timeout so it never reached Chrome.
 ## Gotchas
 
 - **Never rotate `.comet-token` or `.comet-files.json` without asking.**
+- **`ax.js:125` tells the model to "scroll or narrow the page" and no scroll tool exists.**
+  Any truncation message must only name a recovery the agent can actually perform — phase 7.
 - **Both CLIs report the session id as `session_id`**, cursor included, despite its flag being
   spelled `--resume [chatId]`. `index.ts` reads three spellings as cheap insurance.
 - **A fresh claude run's init lists only `["ToolSearch"]`** — MCP tools show up in a later or
