@@ -67,7 +67,7 @@ NOT here; they get their own build phase.
 | `use_tab` | `{id}` switch (detach→attach), `{url}` open-and-switch |
 | `snapshot from:` | `serialize()` builds every line then slices; the notice names the next call |
 
-**Verified live 2026-08-06 — `selftest()` 28/28, 1 skipped** (upload happy path, no file
+**Verified live 2026-08-06 — `selftest()` 27/27, 1 skipped** (upload happy path, no file
 given). All 15 new checks pass in Chrome: hover reveals a `display:none` item, a wheel
 loads a button that was not in the DOM, back/forward land on the right pages, `use_tab`
 opens/switches/returns a page, and `from:` reads past the cap with refs the first page did
@@ -78,6 +78,10 @@ line count that pointed the agent at a page past the end) and all 13 tools listi
 The no-ref `scroll` was flagged as the likeliest failure — it aims at the viewport centre,
 which on the fixture lands **inside the OOPIF** — and it passed: Chrome bubbles an
 unconsumed wheel out of the frame to the parent document. One less thing to design around.
+
+**A form fill also ran agent-driven on the 13-tool layer** (user-confirmed, 2026-08-06) —
+so the new tools did not break the P6 path. **Cost was not captured on that run**, so the
+phase gate below is still open.
 
 **Still open — the phase gate:** **one real form fill measured end to end** ($ / tokens /
 turns) against P3's google baseline of $0.0984 / 111,872 tokens / 9 turns. Procedure is in
