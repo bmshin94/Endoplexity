@@ -75,19 +75,32 @@ running away.
 - Self-test gained one check and is the **only** thing in the repo that exercises `tools.js`.
   Expect **28 passed, 1 skipped** (29/0 with a file path).
 
-**Still owed — the numbers. Nothing has been measured yet.** Two runs, both against P3's
-google baseline of **$0.0984 / 111,872 tokens / 9 turns**, procedure in `docs/handrun.md`
-("The cost number"). Account for the ~1,829 tokens/turn of schema the baseline never paid
-(~16k across 9 turns) rather than reading a rise as regression. The one attempt on
-2026-08-09 was a **Reply, not a Run** — `$0.0967 / 142,756 / 11 turns` measures a
-three-message conversation, not the task, and does not count. Multi-tab is where cost either
-holds or doesn't: every tab switch returns a fresh page into a context that already holds
-the last one.
+**Form-fill number — MEASURED 2026-08-09. The inherited P7 gate is discharged.** A real
+Cloudflare Greenhouse application, fresh Run, agent-driven end to end:
+**$0.0959 / 112,064 tokens / 10 turns / 42s**, against P3's google baseline of
+**$0.0984 / 111,872 / 9 turns**. Flat — and that is *with* ~1,829 tokens/turn of tool schema
+(~18k of the total) the baseline never paid. The tool layer went 5 → 13 tools for free. The
+tab fix above is what made it drivable at all.
+
+**Research number — still owed.** The 2026-08-09 attempt died when the laptop slept, and it
+was a **Reply** anyway (see the Enter trap), so it was carrying the whole form-fill
+transcript while comparing laptops. What it did prove before dying:
+- **`full: true` is adopted immediately and unprompted** — every `navigate` carried it.
+- **Manufacturer sites redirect relentlessly.** Dell and Lenovo ate ~20 navigations between
+  them, each paying a full 300-line prose page for a page the agent did not want. `full:`
+  against a redirect wall is the cost sink this phase went looking for — and the fix is not
+  obviously "read less", since the redirect is only visible once you have read the page.
+- **Stale-ref recovery fired live, twice, and worked** — the agent clicked the right ref on
+  the next turn both times. Unproven since P6; now proven. Not cheap: recovery hands back a
+  whole page (166 refs of Lenovo nav chrome once).
 
 ## Carried forward — still open
 
-- **Stale refs are still the top cost sink** — P6 made the error carry the fresh page, never
-  exercised live.
+- **Stale-ref recovery works but is expensive** — proven live 2026-08-09, and each recovery
+  costs a whole page. Cheaper recovery (a diff, or refs that survive a re-render) is unowned.
+- **The agent's tabs are invisible and unmanaged.** It opens tabs and leaves them scattered
+  through the user's window with no grouping, and does not reliably surface the one it is
+  working on. User-requested 2026-08-09: tab groups, and actually switch to the working tab.
 - **Panel profile field is over-fitted to job applications** — generic prompt-context in a
   job-shaped costume. Generalise (a "what Comet knows about me" store, per the user's
   Obsidian-folder idea) or drop it.
@@ -149,6 +162,21 @@ the last one.
 ## Gotchas
 
 - **Never rotate `.comet-token` or `.comet-files.json` without asking.**
+- **Enter sends a Reply, and Reply stays live forever after any finished task** —
+  `panel.js`'s keydown handler. So the reflex "type a new task, hit Enter" silently resumes
+  the *last* conversation instead of starting one. Cost two measurements on 2026-08-09: the
+  research run inherited a whole Greenhouse application transcript. The log marks it `↩` vs
+  `▶` but only *after* the fact. **Click Run for anything that is not literally an answer to
+  the agent's last question**, and treat any `↩` number as void.
+- **The gate over-fires on cookie banners.** `IRREVERSIBLE` matches "accept", so every
+  "Accept all" consent wall stops the run for a human. Harmless on a form fill, constant on
+  research. Cookie dialogs also *block the page underneath*, so the agent burns turns
+  clicking through a dialog it cannot dismiss without approval.
+- **Dead OOPIF sessions are never removed from `sessions`.** After enough navigations,
+  snapshots trail `(frame f25 unavailable: Session with given id not found.)` — seen 3 at
+  once — costing a failed CDP round trip and a line of noise per dead frame, forever.
+- **A dropped socket kills the run mid-gate.** Laptop sleep disconnected the panel; the
+  approval landed after "not connected" and went nowhere. Nothing resumes.
 - **"Nothing was filled" can mean the agent filled a DIFFERENT TAB.** `attach()` binds once
   and nothing re-bound it, so a panel left open kept driving whatever tab was active when it
   first attached. Measured 2026-08-09: attached to `about:blank`, user opened a Greenhouse
