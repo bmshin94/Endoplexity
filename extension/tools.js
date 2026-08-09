@@ -11,11 +11,16 @@ import * as cdp from "./cdp.js";
 // is the exception on purpose: filling a six-field form must not cost six
 // snapshots, and the page rarely changes between fields. If it does — an
 // autocomplete list, a field that reveals another — the model can still ask.
+//
+// The two tools that ARRIVE somewhere also take `full`, so a reading task gets
+// the prose with the page instead of paying a second turn to re-read it. Acting
+// tools deliberately do not: they run mid-form, where body text is dead weight
+// that every later turn re-sends.
 const TOOLS = {
   snapshot: ({ full, from }) => cdp.snapshot({ full, from }),
-  navigate: async ({ url }) => {
+  navigate: async ({ url, full }) => {
     await cdp.navigate(url);
-    return cdp.snapshot();
+    return cdp.snapshot({ full });
   },
   click: ({ ref }) => cdp.click(ref),
   type: async ({ ref, text }) => {
@@ -33,7 +38,7 @@ const TOOLS = {
   // paying for a snapshot of a tab the agent may not even switch to is the
   // opposite of what "actions return the page" is for.
   tabs: () => cdp.tabs(),
-  use_tab: ({ id, url }) => cdp.useTab(id, url),
+  use_tab: ({ id, url, full }) => cdp.useTab(id, url, { full }),
 };
 
 export async function runTool(name, args) {

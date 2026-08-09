@@ -8,6 +8,7 @@
 // path is given.
 
 import * as cdp from "./cdp.js";
+import { runTool } from "./tools.js";
 
 const FIXTURE = "http://127.0.0.1:8787/fixtures/host.html";
 // The page host.html embeds, loaded top-level here purely as a second real URL
@@ -235,7 +236,18 @@ async function runChecks(check, skip, filePath) {
   // Or every run of this self-test leaves another tab behind.
   if (opened !== home) await chrome.tabs.remove(opened);
 
-  await cdp.navigate(FIXTURE);
+  // Through runTool, not cdp: `full` is threaded in tools.js, and this is the
+  // only check in the file that exercises the path the model's calls actually
+  // take. cdp.snapshot's own `full` is proved by the form checks above — what
+  // can silently break here is the tool layer dropping the argument, which
+  // reads as a working page that is merely missing every word on it.
+  const lean = await runTool("navigate", { url: FIXTURE });
+  const prose = await runTool("navigate", { url: FIXTURE, full: true });
+  check(
+    "navigate threads full: through to the page it returns",
+    prose.length > lean.length ? null : `full:true gave ${prose.length} chars, lean gave ${lean.length}`,
+  );
+
   const refsIn = (text) => new Set(text.match(/@\w+e\d+/g) ?? []);
   const head = await cdp.snapshot({ maxLines: 2 });
   check("a capped snapshot names the call that reads on", head.includes("from: 2") ? null : "no from: in the notice");

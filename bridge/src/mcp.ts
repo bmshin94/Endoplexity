@@ -22,6 +22,17 @@ const KEYS = ["Enter", "Tab", "Escape", "Backspace", "ArrowDown", "ArrowUp"] as 
 // kind of plain-English steer here, telling it to stop rather than route around.
 const DENIED = "blocked — the human denied this action. Do not retry it; stop and report what you were about to do.";
 
+// Shared by the two tools that ARRIVE somewhere. Reading a page is a different
+// job from acting on one, and it is the job the arriving tool can do for free:
+// without this a research task spends a whole extra model turn per source
+// re-reading the page it was just handed — and every turn re-sends the ones
+// before it. Deliberately not on click/key/back/forward: those are acting, and
+// a schema field is paid on every turn by every run.
+const full = z
+  .boolean()
+  .optional()
+  .describe("Include the page's body text, for reading it rather than acting on it. Much larger — leave it off unless you need the prose.");
+
 // The one chokepoint every tool call passes through, so the gate never has to
 // be wired into five separate handlers: check the policy, ask the human if it
 // says so, then relay to the panel. A tool failure the model can read is worth
@@ -79,9 +90,9 @@ function build() {
     "navigate",
     {
       description: "Point the tab at a URL, wait for the load, and return the loaded page. No snapshot needed afterwards.",
-      inputSchema: { url: z.string().url().describe("Absolute URL including the scheme") },
+      inputSchema: { url: z.string().url().describe("Absolute URL including the scheme"), full },
     },
-    ({ url }) => relay("navigate", { url }),
+    (args) => relay("navigate", args),
   );
 
   server.registerTool(
@@ -224,6 +235,7 @@ function build() {
       inputSchema: {
         id: z.number().int().optional().describe("An id from tabs()"),
         url: z.string().url().optional().describe("Open a new tab here instead. Use navigate to move the tab you are already on."),
+        full,
       },
     },
     (args) => relay("use_tab", args),
