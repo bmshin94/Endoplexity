@@ -162,12 +162,12 @@ transcript while comparing laptops. What it did prove before dying:
 ## Gotchas
 
 - **Never rotate `.comet-token` or `.comet-files.json` without asking.**
-- **Enter sends a Reply, and Reply stays live forever after any finished task** —
-  `panel.js`'s keydown handler. So the reflex "type a new task, hit Enter" silently resumes
-  the *last* conversation instead of starting one. Cost two measurements on 2026-08-09: the
-  research run inherited a whole Greenhouse application transcript. The log marks it `↩` vs
-  `▶` but only *after* the fact. **Click Run for anything that is not literally an answer to
-  the agent's last question**, and treat any `↩` number as void.
+- **Enter is a fresh Run; ctrl/cmd+Enter is a Reply.** It used to be the other way round —
+  Reply won the key whenever it was live, and Reply stays live forever after any finished
+  task, so "type the next task, hit Enter" silently resumed the previous conversation. Cost
+  two measurements on 2026-08-09; one had a laptop comparison running with a whole Greenhouse
+  application in context. Changed because the asymmetry is one-sided: a fresh Run is at worst
+  more expensive, a wrong Reply is wrong. **Any `↩` number in a log is void as a measurement.**
 - **The gate over-fires on cookie banners.** `IRREVERSIBLE` matches "accept", so every
   "Accept all" consent wall stops the run for a human. Harmless on a form fill, constant on
   research. Cookie dialogs also *block the page underneath*, so the agent burns turns

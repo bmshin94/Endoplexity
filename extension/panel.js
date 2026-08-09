@@ -352,14 +352,20 @@ stopBtn.addEventListener("click", () => {
   send({ type: "stop" });
 });
 
-// Enter answers the agent when there is a conversation to answer and starts a
-// fresh task otherwise; shift+Enter is a newline. The reflex after the agent
-// asks a question is to type and hit Enter — sending that as a brand-new
-// contextless run is the expensive mistake, so Reply wins the key while it is
-// live. The log marks which happened, ↩ or ▶.
+// Enter starts a fresh task; ctrl/cmd+Enter answers the agent; shift+Enter is a
+// newline. Reply used to win the key outright whenever it was live, reasoning
+// that the reflex after a question is to type and hit Enter. Measured 2026-08-09:
+// Reply stays live forever after any finished task, so the far commoner reflex —
+// type the NEXT task, hit Enter — silently resumed the previous conversation
+// instead. It voided two cost measurements and left a laptop comparison running
+// with a whole job application still in context. The asymmetry decides it: a
+// fresh Run is at worst more expensive, a wrong Reply is simply wrong, and the
+// log only says which happened (↩ or ▶) once the money is spent.
 promptEl.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || event.shiftKey) return;
-  const resume = !replyBtn.disabled;
+  const resume = event.ctrlKey || event.metaKey;
+  // Only guarded for a fresh run — a ctrl+Enter with nothing to reply to falls
+  // through to runTask, which says so rather than swallowing the keystroke.
   if (!resume && runBtn.disabled) return;
   event.preventDefault();
   runTask(resume);
