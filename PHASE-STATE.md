@@ -19,26 +19,20 @@ continues the last conversation instead of starting a new one. Panel console:
 ## Done
 
 - **P0–P2 — handshake, CDP tool layer, MCP relay.** Loopback WS gated on extension origin AND
-  timing-safe token (curl 401/401/401/101); flat auto-attach, one CDP session per OOPIF,
-  generation-based stale refs, 7/7 incl. a trusted click in a real cross-site OOPIF; `/mcp`
-  relayed over that same socket, and a google search+open ran unattended.
+  timing-safe token (401/401/401/101); flat auto-attach, one CDP session per OOPIF,
+  generation-based stale refs; `/mcp` over that same socket; a google search+open ran unattended.
 - **P3 — token efficiency.** Snapshots default to actionable + headings; actions return the
-  page they produced. One google run at **$0.0984 / 111,872 tokens / 9 turns**. Prose-cutting
-  alone was **1.5x, not 2x** — the surviving actionable lines are the long ones.
-- **P4 — approval gate.** `gate.ts` is the policy and the only place that decides; `relay()` is
-  the single chokepoint. 60s silence, no panel, or a panel dropping mid-gate all deny. Approve
-  and deny both verified live.
-- **P5 — Cursor adapter + model picker.** `cursor-agent` native Windows in a bridge-owned
-  profile; model → adapter off an allowlist map. Ran end to end on `composer-2.5` and
-  `cursor-grok-4.5-medium`. Shell denied, `apiKeySource: "login"`.
-- **Session continuity.** The bridge keeps the CLI session id and `--resume`s it; the panel
-  gains **Reply**, live only when the last run left a transcript. Verified on both CLIs by
-  codeword recall across two spawns, and a resumed claude run's init still lists only
-  `ToolSearch` + `mcp__comet__*` — resume restores the conversation, not reach.
-- **Page context.** The panel names the current page in every task prompt, read through the
-  same picker `attach()` uses so the two cannot disagree. Without it "apply to *this* job" was
-  unanswerable: the agent asked for a URL and exited at 1 turn having called nothing.
-  `design.md:123` specified this and it had never been built.
+  page they produced. **Baseline: one google run at $0.0984 / 111,872 tokens / 9 turns.**
+  Prose-cutting alone was **1.5x, not 2x** — the surviving actionable lines are the long ones.
+- **P4 — approval gate.** `gate.ts` is the policy, `relay()` the single chokepoint. 60s silence,
+  no panel, or a panel dropping mid-gate all deny. Approve and deny both verified live.
+- **P5 — Cursor adapter + model picker**, end to end on `composer-2.5` and
+  `cursor-grok-4.5-medium`; shell denied, `apiKeySource: "login"`.
+- **Session continuity.** The bridge `--resume`s the CLI session id; the panel gains **Reply**,
+  live only when the last run left a transcript. Verified by codeword recall across spawns.
+- **Page context.** The panel names the current page in every task prompt, through the same
+  picker `attach()` uses. Without it "apply to *this* job" was unanswerable — the agent asked
+  for a URL and exited at 1 turn. Necessary but NOT sufficient: see the different-tab gotcha.
 - **P6 — v1, agent-driven form fill (closed 2026-08-06).** `upload` takes a configured KEY and
   scans every frame's DOM for `input[type=file]` because real ATS forms hide it; `select`
   drives a native `<select>`; `key: Enter` is gated on irreversible-labelled controls; stale
@@ -71,14 +65,24 @@ running away.
 **Done when:** a five-source comparison lands in the panel as a table, **and it is measured**
 ($ / tokens / turns).
 
-**Inherited gate — measure a run.** P7 shipped unmeasured, so this is now two numbers, not
-one: a form fill AND the research task, both against P3's google baseline of **$0.0984 /
-111,872 tokens / 9 turns**. Procedure in `docs/handrun.md` ("The cost number"). Known
-headwind: the six P7 tools add **~666 tokens of schema per turn** (~1,742 for all 13,
-measured off the real `tools/list`) — ~6k across 9 turns the baseline never paid, so account
-for it rather than reading a rise as regression. Multi-tab makes this the phase where cost
-either holds or doesn't: every tab switch returns a fresh page into a context that already
-holds the last one.
+**Shipped so far (2026-08-09), all unmeasured:**
+- **`full` on `navigate` and `use_tab`.** cdp.js already forwarded an options bag to
+  `snapshot`; only the tool schema was missing, so a *reading* task paid a whole extra model
+  turn per source re-reading a page it had just been handed. Costs **~87 tokens/turn** of
+  schema (all 13 tools now ~1,829, was 1,742), should save ~5 turns on a five-source read.
+- **A fresh Run re-attaches to the active tab** (`panel.js` `runTask`). See the gotcha below —
+  this is the bug that ate the first form-fill attempt.
+- Self-test gained one check and is the **only** thing in the repo that exercises `tools.js`.
+  Expect **28 passed, 1 skipped** (29/0 with a file path).
+
+**Still owed — the numbers. Nothing has been measured yet.** Two runs, both against P3's
+google baseline of **$0.0984 / 111,872 tokens / 9 turns**, procedure in `docs/handrun.md`
+("The cost number"). Account for the ~1,829 tokens/turn of schema the baseline never paid
+(~16k across 9 turns) rather than reading a rise as regression. The one attempt on
+2026-08-09 was a **Reply, not a Run** — `$0.0967 / 142,756 / 11 turns` measures a
+three-message conversation, not the task, and does not count. Multi-tab is where cost either
+holds or doesn't: every tab switch returns a fresh page into a context that already holds
+the last one.
 
 ## Carried forward — still open
 
@@ -114,6 +118,12 @@ holds the last one.
 - **Actions return the page they produced.** A separate `snapshot` is a whole model turn, and a
   turn re-sends everything. `type` is the deliberate exception — and so is `tabs`, which is
   orientation, not an action, and must not pay for a page the agent may not switch to
+- **The two tools that ARRIVE somewhere (`navigate`, `use_tab`) also take `full`**, so a
+  reading task gets the prose with the page. Acting tools deliberately do not: mid-form, body
+  text is dead weight that every later turn re-sends
+- **A fresh Run re-attaches to the active tab; a Reply never does.** "This page" can only mean
+  the one you are looking at when you press Run, and a fresh Run holds no refs and no
+  transcript, so re-binding is free. Mid-conversation it would destroy refs the agent is using
 - **Scrolling is a real wheel event, not `window.scrollBy`.** Trusted, so an infinite feed's
   IntersectionObserver fires; hit-tested at a point, so a wheel over an open combobox scrolls
   the flyout rather than the document behind it. `scrollBy` does neither
@@ -139,6 +149,19 @@ holds the last one.
 ## Gotchas
 
 - **Never rotate `.comet-token` or `.comet-files.json` without asking.**
+- **"Nothing was filled" can mean the agent filled a DIFFERENT TAB.** `attach()` binds once
+  and nothing re-bound it, so a panel left open kept driving whatever tab was active when it
+  first attached. Measured 2026-08-09: attached to `about:blank`, user opened a Greenhouse
+  posting in another tab, agent navigated *its own* tab there and filled the form perfectly —
+  every tool returned success, every value landed, none of it on the page being watched.
+  Fixed by re-attaching on a fresh Run, but the diagnostic habit matters more: **read
+  `comet: attached to tab N — <url>` in the panel console before believing an action failed.**
+  Naming the page (704e08c) does not catch this — the prompt said "about:blank" truthfully.
+- **`navigate` waits for `complete` with NO timeout, deliberately** — unlike `go()` and
+  `settle()`, which cap at 10s. Capping it was tried on 2026-08-09 and reverted unused: an
+  early return hands back a half-loaded page that reads as fine and types into nothing, which
+  is strictly worse than the relay's 30s deadline firing out loud. Don't re-add it without a
+  real hung page to point at.
 - **The AX tree is the whole document, not the viewport, and `click` already calls
   `DOM.scrollIntoViewIfNeeded`.** So "below the fold" was never unreachable — phase 7's gap
   table said it was and the code disagreed. What scroll actually buys is content not in the
