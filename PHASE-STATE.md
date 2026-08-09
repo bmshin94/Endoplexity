@@ -56,64 +56,43 @@ continues the last conversation instead of starting a new one. Panel console:
   Corrected the phase's own premise on the way: the AX tree is the whole document, so below
   the fold was never unreachable.
 
-## Current phase: 8 — multi-tab research
+- **P8 — multi-tab research (closed 2026-08-09, deliverable NOT met).** Shipped `full` on
+  `navigate`/`use_tab` (~87 tokens/turn; all 13 tools ~1,829), a fresh Run re-attaching to the
+  active tab, and Enter/ctrl+Enter swapped. **P7's inherited gate IS discharged** — a real
+  Cloudflare Greenhouse application, agent-driven: **$0.0959 / 112,064 tokens / 10 turns /
+  42s** against P3's **$0.0984 / 111,872 / 9 turns**. Flat, while paying ~18k of tool schema
+  the baseline never did, so 5 → 13 tools cost nothing. **The research number was never
+  obtained** — four attempts died four different ways: wrong tab, Reply, laptop sleep, and
+  finally the agent answering from memory without browsing at all. Proved live on the way:
+  `full:` is adopted unprompted, stale-ref recovery works (and costs a whole page each time),
+  and redirect walls make `full:` expensive — you only learn a page was wrong after paying
+  to read it.
 
-**Goal:** "Compare these 5 laptops" → a table in the panel. `tabs`/`use_tab` unblocked this;
-what is untested is an agent holding several pages in mind at once without the context cost
-running away.
+## Current phase: 9 — refinement
 
-**Done when:** a five-source comparison lands in the panel as a table, **and it is measured**
-($ / tokens / turns).
+**Goal:** make it trustworthy and presentable — frontend, permissions, smoothness, design, a
+real Obsidian-backed memory, open-source/GitHub readiness. Scope it at phase start; the queue
+below is what P8 accumulated, not a plan.
 
-**Shipped so far (2026-08-09), all unmeasured:**
-- **`full` on `navigate` and `use_tab`.** cdp.js already forwarded an options bag to
-  `snapshot`; only the tool schema was missing, so a *reading* task paid a whole extra model
-  turn per source re-reading a page it had just been handed. Costs **~87 tokens/turn** of
-  schema (all 13 tools now ~1,829, was 1,742), should save ~5 turns on a five-source read.
-- **A fresh Run re-attaches to the active tab** (`panel.js` `runTask`). See the gotcha below —
-  this is the bug that ate the first form-fill attempt.
-- Self-test gained one check and is the **only** thing in the repo that exercises `tools.js`.
-  Expect **28 passed, 1 skipped** (29/0 with a file path).
+**Top of the queue — the agent answers from memory instead of browsing.** A five-source
+research task returned a plausible comparison table having called **zero tools** (`1 turns`,
+no tabs opened, `$0.1354 / 15,432 tokens` — ~9x the $/token of the form fill, the shape of
+pure output with no page content coming in). Every source URL in it was recalled, not
+visited. This is worse than a crash because it looks like success. **Untested hypothesis
+worth checking before building anything:** MCP tools arrive **deferred**, so a fresh run's
+init lists only `ToolSearch` and the model has to go find the browser tools first — answering
+from memory is the path of least resistance and nothing in the product argues otherwise. A
+browser-control product cannot ship this.
 
-**Form-fill number — MEASURED 2026-08-09. The inherited P7 gate is discharged.** A real
-Cloudflare Greenhouse application, fresh Run, agent-driven end to end:
-**$0.0959 / 112,064 tokens / 10 turns / 42s**, against P3's google baseline of
-**$0.0984 / 111,872 / 9 turns**. Flat — and that is *with* ~1,829 tokens/turn of tool schema
-(~18k of the total) the baseline never paid. The tool layer went 5 → 13 tools for free. The
-tab fix above is what made it drivable at all.
+**Also queued:** tab groups and surfacing the tab being worked on (user-requested, tabs are
+currently scattered through the window); the gate over-firing on cookie "Accept"; leaked dead
+OOPIF sessions; the `<pre>` log needing a real markdown renderer (never `innerHTML` — it
+carries page content from arbitrary sites); cheaper stale-ref recovery than a whole page; the
+profile field's job-shaped costume (generalise to a "what Comet knows about me" store, per
+the Obsidian-folder idea, or drop it); and a compression pass on this file — it is over the
+150-line cap and the Gotchas below are too valuable to trim carelessly.
 
-**Research number — still owed.** The 2026-08-09 attempt died when the laptop slept, and it
-was a **Reply** anyway (see the Enter trap), so it was carrying the whole form-fill
-transcript while comparing laptops. What it did prove before dying:
-- **`full: true` is adopted immediately and unprompted** — every `navigate` carried it.
-- **Manufacturer sites redirect relentlessly.** Dell and Lenovo ate ~20 navigations between
-  them, each paying a full 300-line prose page for a page the agent did not want. `full:`
-  against a redirect wall is the cost sink this phase went looking for — and the fix is not
-  obviously "read less", since the redirect is only visible once you have read the page.
-- **Stale-ref recovery fired live, twice, and worked** — the agent clicked the right ref on
-  the next turn both times. Unproven since P6; now proven. Not cheap: recovery hands back a
-  whole page (166 refs of Lenovo nav chrome once).
-
-## Carried forward — still open
-
-- **Stale-ref recovery works but is expensive** — proven live 2026-08-09, and each recovery
-  costs a whole page. Cheaper recovery (a diff, or refs that survive a re-render) is unowned.
-- **The agent's tabs are invisible and unmanaged.** It opens tabs and leaves them scattered
-  through the user's window with no grouping, and does not reliably surface the one it is
-  working on. User-requested 2026-08-09: tab groups, and actually switch to the working tab.
-- **Panel profile field is over-fitted to job applications** — generic prompt-context in a
-  job-shaped costume. Generalise (a "what Comet knows about me" store, per the user's
-  Obsidian-folder idea) or drop it.
-- **The log is a `<pre>`, not a renderer.** `panel.js`'s `plain()` strips `**bold**` markers,
-  so that specific eyesore is gone, but lists, headings and code fences still arrive as raw
-  markdown. Deliberately not innerHTML — this text carries page content from arbitrary sites.
-  Phase 9.
-
-## Remaining phases
-
-| # | Deliverable | Done when |
-|---|---|---|
-| 9 | **Refinement build** | Frontend, permissions, smoothness, design, a real Obsidian-backed memory, and open-source/GitHub readiness. Deliberately its own phase — none of it belongs in 7 or 8 |
+**Owed from P8:** the research cost number, once the agent actually browses for it.
 
 ## Decisions locked
 
