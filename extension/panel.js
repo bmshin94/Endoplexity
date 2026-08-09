@@ -280,6 +280,32 @@ async function runTask(resume = false) {
   // where the guard has passed but nothing is disabled yet.
   setBusy(true);
 
+  // A fresh Run drives the tab you are looking at NOW.
+  //
+  // attach() binds once and nothing ever re-bound it, so a panel left open kept
+  // driving whatever tab happened to be active the first time it attached.
+  // Measured 2026-08-09: the panel was attached to an about:blank tab, the user
+  // opened a Greenhouse posting in a different tab and asked to apply, and the
+  // agent navigated ITS tab to that URL and filled the form there — every tool
+  // call succeeded, every value landed, and none of it was on the page the user
+  // was watching. Naming the page (704e08c) did not cover this: the prompt said
+  // "about:blank" quite truthfully, and it was the tab choice that was wrong.
+  //
+  // Only on a fresh Run: there is no transcript and there are no refs yet, so
+  // re-binding costs nothing. A reply must not — mid-conversation the agent is
+  // holding refs, and they belong to the tab it has been looking at all along.
+  if (!resume) {
+    try {
+      await cdp.detach();
+      await cdp.attach();
+    } catch (err) {
+      // Not fatal: runTool attaches lazily on the first call, so the task can
+      // still run — it just loses the page context below. Say so rather than
+      // letting the agent look like it ignored the page.
+      log(`could not attach to the active tab — ${err.message}`);
+    }
+  }
+
   // "Apply to THIS job" is unanswerable unless the task says which page this is.
   // Without it the agent asked for a URL instead of acting — it has no way to
   // know a tab is even open. Naming the page is what makes a Comet-style command

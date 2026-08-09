@@ -166,6 +166,10 @@ export function loaded(id, timeoutMs) {
 export async function navigate(url) {
   requireAttached();
   // Listener first: a cached page can finish loading before we would hear it.
+  // Deliberately uncapped, unlike go() and settle(): returning early here hands
+  // back a half-loaded page that reads as fine and types into nothing, which is
+  // far worse than the relay's 30s deadline firing and saying so out loud. If a
+  // beacon-hung page ever does strand this, fix it with the evidence in hand.
   const ready = loaded(tabId);
   await chrome.tabs.update(tabId, { url });
   await ready;
