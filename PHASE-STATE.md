@@ -9,11 +9,12 @@ on any site", not "does this finish the job-form task".
 The bridge exposes browser tools over MCP; the CLIs are the agent loop. The extension never
 talks to a model, the CLI never talks to Chrome.
 
-**Run:** `npm install` · `npm start` (prints the token) · `npm test` · `npm run cursor-login`
-(once, for the Cursor models — never `cursor-agent login`). Then `chrome://extensions` → Load
-unpacked → `extension/`, open the side panel, paste the token, type a task, hit Run; **Reply**
-continues the last conversation instead of starting a new one. Panel console:
-`comet.selftest("C:\path\to\file.pdf")`, `comet.measure()`, `comet.reply("…")`. Uploads read
+**Run:** `npm install` · `npm run setup` (once — autostarts the bridge at login, no token) ·
+`npm test` · `npm run cursor-login` (once, for the Cursor models — never `cursor-agent login`).
+Then `chrome://extensions` → Load unpacked → `extension/`, open the side panel, type a task,
+hit Run; **Reply** (ctrl+Enter) continues the last conversation. The bridge is invisible, so
+its output is `.comet-bridge.log`; `CometClone.vbs` is the manual start. Panel console:
+`comet.selftest("C:\path\to\file.pdf")`, `comet.measure()`, `comet.log()`. Uploads read
 `.comet-files.json` (copy `.comet-files.example.json`). See `docs/handrun.md`.
 
 ## Done
@@ -68,31 +69,115 @@ continues the last conversation instead of starting a new one. Panel console:
   and redirect walls make `full:` expensive — you only learn a page was wrong after paying
   to read it.
 
-## Current phase: 9 — refinement
+- **P9 — refinement (code landed 2026-08-09, live verification OWED).** Scoped from the four
+  things that made it unshowable: startup, unreadable output, robustness, an unexercised
+  Cursor path. Design target researched **first-party rather than from memory** — Perplexity's
+  three stated principles (**transparency, user control, sound judgment**), Claude for Chrome's
+  three-mode `PermissionManager`, Gemini's chronological action list. Shipped:
+  - **No terminal, no token.** `npm run setup` writes a Startup-folder `.vbs`. The extension
+    id is pinned by an RSA `key` in the manifest (`lblllkbcfcaecfpefighocaefnfkebjj`,
+    confirmed against Chrome) and the WS upgrade is gated on that exact origin — no token on
+    the panel path at all. An HTTP `/pair` was built first and **deleted**: Chrome sends no
+    Origin on an extension `fetch()`, so it refused its own panel. Verified by curl: upgrade
+    401 for no origin / another extension / a website, **101** for ours; `/mcp` still
+    401/401/401/200 with 13 tools.
+  - **A conversation, not a log.** `md.js` (pure testable `parse`, `createElement`-only
+    `toDom`) + `transcript.js`: markdown with tables, one collapsed `<details>` per tool call,
+    a live step line, cost as a chip. Tool rows now come from `answer()` — the bridge already
+    sends name+args — which **deleted** both claude's `tool_use` parsing and cursor's
+    `tool_call` branch.
+  - **Robustness.** `sendPanel()` resolves the socket at call time (gotcha below), `hello`
+    restores running/resumable on reconnect, backoff + 20s heartbeat, 15s orphan grace kill.
+  - **Three autonomy modes** (`watch`/`normal`/`trust`) chosen in the panel, enforced in the
+    bridge, never in a prompt; `watch` remembers an approval for the rest of the task or it is
+    unusable. **Deliberately reopened the locked auto-run decision, at user request.**
+  - `accept`/`agree` out of `IRREVERSIBLE`; an unknown model now fails instead of silently
+    running Sonnet; `EADDRINUSE` prints a sentence. **78/78 tests**, was 54.
 
-**Goal:** make it trustworthy and presentable — frontend, permissions, smoothness, design, a
-real Obsidian-backed memory, open-source/GitHub readiness. Scope it at phase start; the queue
-below is what P8 accumulated, not a plan.
+- **P9b — the panel redesigned from zero (code landed 2026-08-10, live verification OWED).**
+  The verdict that opened it: grok-4.5 works, and the panel was the thing holding it back —
+  "flooded with tool usage", and formatting "not showing". Both were real and both are fixed.
+  Design context now lives in `PRODUCT.md` + `DESIGN.md` at the root (written this session, via
+  the impeccable skill). Register **product**, colour strategy **restrained**, theme **follows
+  the browser and is never white**. Shipped:
+  - **Instrument, not editorial.** The warm-cream-plus-serif answer was the second-order
+    category reflex and read as costume. One sans family, OKLCH neutrals tinted to hue 150,
+    hairline rules, tabular numerals. Three colour roles and no others: green = live/primary/
+    success, ochre = needs-you, red = danger. Claude-amber, Perplexity-teal and Linear-violet
+    were all rejected as the category's reflex palettes.
+  - **The trace recedes.** 11.5px, `--text-soft`, one sentence, folded, behind a single
+    unbroken rail (a `.trace` wrapper, not a per-row border). Only the dot and the word
+    "failed" carry colour. It recedes through size, weight and position — **not** through
+    lighter grey, which would have bought the same look by failing AA.
+  - **Formatting the model actually meant.** h1–h6 (was h1–h3, and a `####` used to eat the
+    following line), `__bold__`, `~~strike~~`, nested lists by indent, task checkboxes, and
+    **equations**: `math.js` is a LaTeX subset → **native MathML**, no library. KaTeX was
+    rejected — ~280KB vendored under a CSP that forbids any external host, for a minority of
+    answers. Verified rendering a real quadratic and `\left(…\right)^2`.
+  - **Proper icons.** One inline SVG sprite, 16px grid, 1.5px stroke, `currentColor`, `<use>`.
+    The text glyphs `○ ● ✓ ✕` are gone.
+  - **The dropdowns are ours now.** `appearance: base-select` (Chrome 135+, we are on 151) —
+    the OS-drawn white sheet with the blue highlight is replaced by a themed picker that fades
+    and lifts on open, with hover rows, a rotating chevron and a green tick. Still a real
+    `<select>`, so keyboard and a11y are free and `panel.js` still just reads `.value`.
+    Secondary controls became ghosts; only Run stays filled.
+  - **78 → 96 tests** (`math.test.ts` is new; `parseMath` is DOM-free for exactly that reason).
 
-**Top of the queue — the agent answers from memory instead of browsing.** A five-source
-research task returned a plausible comparison table having called **zero tools** (`1 turns`,
-no tabs opened, `$0.1354 / 15,432 tokens` — ~9x the $/token of the form fill, the shape of
-pure output with no page content coming in). Every source URL in it was recalled, not
-visited. This is worse than a crash because it looks like success. **Untested hypothesis
-worth checking before building anything:** MCP tools arrive **deferred**, so a fresh run's
-init lists only `ToolSearch` and the model has to go find the browser tools first — answering
-from memory is the path of least resistance and nothing in the product argues otherwise. A
-browser-control product cannot ship this.
+- **P9c — sessions that survive (code landed 2026-08-10, live verification OWED).** First of the
+  four queued features, picked as the cheapest: panel-side plus one line in the bridge, no
+  measurement run and no new dependency. `transcript.js` now journals every rendered entry as
+  plain data and can `restore()` it, `sessions.js` (DOM-free, so testable) holds the list —
+  newest first, `sessions[0]` live, 20 sessions × 400 entries × 2,000 chars per field — and
+  `panel.js` mirrors it into `chrome.storage.local` on a 400ms debounce. **A `+` in the header
+  archives the live session; a History sheet in the footer reads any of them back.** Falls out
+  for free: Chrome tears the side panel down on every window switch, so **the transcript no
+  longer vanishes when you look at another window** — that was the everyday bug, not the
+  headline feature. Reply is off while reading history, New is off while a task runs, and Run
+  snaps back to live first. **96 → 106 tests**; the DOM half was checked in headless Chrome
+  (17 assertions, both themes, footer one row at 360px *and* 320px).
 
-**Also queued:** tab groups and surfacing the tab being worked on (user-requested, tabs are
-currently scattered through the window); the gate over-firing on cookie "Accept"; leaked dead
-OOPIF sessions; the `<pre>` log needing a real markdown renderer (never `innerHTML` — it
-carries page content from arbitrary sites); cheaper stale-ref recovery than a whole page; the
-profile field's job-shaped costume (generalise to a "what Comet knows about me" store, per
-the Obsidian-folder idea, or drop it); and a compression pass on this file — it is over the
-150-line cap and the Gotchas below are too valuable to trim carelessly.
+## Current phase: 9 — closing out
 
-**Owed from P8:** the research cost number, once the agent actually browses for it.
+**Owed before this closes — all live, none of it doable from a terminal:** load `extension/`
+unpacked and confirm Chrome's id equals `lblllkbcfcaecfpefighocaefnfkebjj` (a unit test
+recomputing our own formula cannot catch a disagreement with Chrome); `await comet.selftest()`
+back to 27/27; one real task whose answer contains a table; close and reopen the side panel
+mid-task and confirm events keep arriving; a cookie-walled page not stopping; and **C8, the
+Cursor checklist** on both `composer-2.5` and `cursor-grok-4.5-medium` — the only thing that
+retires "never really tried it with cursor".
+
+**Owed for P9b specifically:** the redesign was verified in headless Chrome against a
+synthesised transcript, at 360px and 320px, in both themes — real layout, real MathML, no
+horizontal overflow. That is not the same as a real run: **reload the unpacked extension** and
+confirm the theme follows the browser both ways, the composer stays on one line at the width
+you actually use, and a real agent answer containing a table renders. `scripts/` has no preview
+harness; it was scratch, and rebuilding it is a 90-line http server plus a swapped `<script>`.
+
+**Owed from P8, still owed:** the research cost number, and whether C0's one-line briefing
+clause ("never answer from memory") actually fixes the zero-tool research answer. If it does
+not, the deferred-MCP-tools hypothesis survives and earns real budget.
+
+**Queued as the next phase, by the user (2026-08-10)** — after a run where "grok 4.5 works
+like butter" and the product is finally usable, these four are what stand between it and an
+experience. **Sessions + history is done (P9c above).** The three left: **file input the agent
+understands** (pdf, docx, xlsx — not just `upload`'s opaque file-to-a-form-field path; the
+agent must be able to *read* an attachment); **token efficiency** — the user's words are "this
+is too consuming", so P3's measurement work gets a second pass with the 13-tool schema and
+`full:` returns now in the bill; and **the claude path brought up to the cursor path's
+quality** — "kinda ass with claude, really good with cursor" is the standing verdict, and C8
+was going to test cursor, not claude.
+
+**Owed for P9c:** the storage cap is a guess, not a measurement — pack() clips a field at
+2,000 chars and keeps 400 entries, but nobody has watched what a real 10-turn run with `full:`
+snapshots actually weighs against the 10MB quota. Also unverified live: that a task running
+while the panel is closed and reopened lands its events in the right session.
+
+**Still queued:** dead OOPIF sessions; cheaper stale-ref recovery than a whole page; the
+profile field's job-shaped costume; `@`-mentioning a tab as context (Comet has it, our
+fresh-Run re-attach covers the failure that actually bit us); Chrome tab groups (rejected for
+now — Claude's version drew four bug reports for groups that multiply and never clean up);
+README/LICENSE/demo assets (deferred, software only); and a compression pass on this file,
+now well over the 150-line cap.
 
 ## Decisions locked
 
@@ -141,16 +226,54 @@ the Obsidian-folder idea, or drop it); and a compression pass on this file — i
 ## Gotchas
 
 - **Never rotate `.comet-token` or `.comet-files.json` without asking.**
+- **Dropping the bridge's session id has to survive a disconnected socket.** New Session sends
+  `new-session`, but with the panel disconnected there is nothing to send it to — and the
+  bridge still holds the id, so its next `hello` said `resumable: true` and lit Reply back up
+  on the session that was just archived. That is the cross-conversation bug the Enter/Reply
+  swap already cost two measurements to. `dropBridgeSession()` latches and re-sends on the next
+  hello, and that hello's own `resumable` is ignored because it describes the pre-drop state.
+- **The empty state is hidden, never removed.** Its seed buttons are wired once at load, so a
+  removed node takes its listeners with it and New Session brings back dead buttons. Caught in
+  headless: `send()`'s "not connected" note re-hid it the instant after `clear()` un-hid it.
+- **`el.className = x` silently does nothing on an SVG element.** There it is a read-only
+  `SVGAnimatedString`, so the assignment is dropped without an error — `setAttribute("class")`
+  is the only way. Bit the `#where-state` icon the moment it stopped being a text glyph.
+- **Two `base-select` traps, both of which fail SILENTLY into the native look.** A descendant
+  combinator after a pseudo-element is invalid, so `::picker(select) option { … }` drops the
+  entire rule — style `option`/`optgroup`/`legend` with plain selectors (nothing leaks into the
+  closed trigger, which renders a `<selectedcontent>` clone of the option's child nodes, not
+  the option). And `optgroup label="…"` is UA-drawn: group captions need a real `<legend>`
+  child. Both were written the wrong way first, and the only symptom was a picker that still
+  looked native while `getComputedStyle().appearance` said `base-select`.
+- **A `<select>` cannot be opened by a synthetic click** — `showPicker()` needs transient user
+  activation. Screenshotting an open dropdown means driving Chrome over CDP and dispatching a
+  real `Input.dispatchMouseEvent`.
+- **Verifying the panel in headless Chrome needs an iframe.** Chrome refuses a window narrower
+  than ~500px, so `--window-size=360` lays out at 526 and merely *crops* the image — which
+  looks exactly like a horizontal-overflow bug and is not one. Load the panel in a 360px
+  iframe to get a true viewport, and measure with `documentElement.clientWidth` rather than
+  trusting the flag. Headless also reports `prefers-color-scheme: dark`, so the light theme
+  has to be forced (`Emulation.setEmulatedMedia`) to be seen at all. Serve the iframe from the
+  same origin as its host and the top frame can just reach in via `contentWindow` — no
+  per-frame execution context needed. The `chrome` stub must include `debugger.onEvent` and
+  `debugger.onDetach`: cdp.js registers those at **import** time, so the module throws on load
+  without them.
 - **Enter is a fresh Run; ctrl/cmd+Enter is a Reply.** It used to be the other way round —
   Reply won the key whenever it was live, and Reply stays live forever after any finished
   task, so "type the next task, hit Enter" silently resumed the previous conversation. Cost
   two measurements on 2026-08-09; one had a laptop comparison running with a whole Greenhouse
   application in context. Changed because the asymmetry is one-sided: a fresh Run is at worst
   more expensive, a wrong Reply is wrong. **Any `↩` number in a log is void as a measurement.**
-- **The gate over-fires on cookie banners.** `IRREVERSIBLE` matches "accept", so every
-  "Accept all" consent wall stops the run for a human. Harmless on a form fill, constant on
-  research. Cookie dialogs also *block the page underneath*, so the agent burns turns
-  clicking through a dialog it cannot dismiss without approval.
+- **A captured socket is why "reconnect" was never enough.** `startTask`'s `send` closed over
+  the `ws` that delivered the `task` message. `relay.ts` re-points its own `panel` on
+  reconnect, so every *tool call* kept working through a panel remount — but task events went
+  to the dead socket forever, so the run carried on invisibly and the panel looked idle until
+  it ended. Fixed by `sendPanel()`, which resolves the socket at call time. **Any future
+  panel-side reconnect work is decoration without it**; `relay.test.ts` pins it.
+- **The gate no longer fires on cookie banners** — `accept`/`agree` came out of
+  `IRREVERSIBLE` (P9). Accepted residual: a page whose *only* irreversible control reads "I
+  accept" (EULA-style) now goes ungated. Do not re-add the words to fix that; add the context
+  the label is missing.
 - **Dead OOPIF sessions are never removed from `sessions`.** After enough navigations,
   snapshots trail `(frame f25 unavailable: Session with given id not found.)` — seen 3 at
   once — costing a failed CDP round trip and a line of noise per dead frame, forever.
@@ -235,7 +358,25 @@ the Obsidian-folder idea, or drop it); and a compression pass on this file — i
 
 ## Security invariants (do not regress)
 
-- Bind `127.0.0.1` only; both origin **and** token required on WS upgrade
+- Bind `127.0.0.1` only. **The WS upgrade is gated on the origin alone now — the token is
+  gone from that path, reversing the old "both origin AND token" invariant.** The origin is an
+  **exact match** against the id derived from the RSA `key` in `extension/manifest.json`
+  (`auth.ts` derives it from the manifest at load, never hardcoded, so the two cannot drift
+  into "nothing connects"). The token only ever backed up a *weak* check —
+  `startsWith("chrome-extension://")`, which every extension satisfied. Against one pinned id
+  it adds nothing, because the panel is a browser page: its only way to *receive* a token is
+  over a channel gated by that same origin, so anyone who can forge the origin collects the
+  token first. A token the client fetches for itself is theatre. **The token is still the
+  whole boundary on `/mcp`**, where it is load-bearing because a CLI sends no Origin
+- **Do not re-add an HTTP pairing endpoint.** Measured 2026-08-09: Chrome sends **no `Origin`
+  header at all** on `fetch()` from an extension page when the extension holds host
+  permissions — the request is privileged rather than CORS — so `/pair` refused its own panel
+  (`refused /pair from origin=(none)`). The **WebSocket upgrade does** carry a real Origin, and
+  page script cannot set one. That asymmetry is why the identity check lives on the socket
+- **The autonomy mode is transported with the task and enforced in the bridge**, never in a
+  prompt, and the model never sees it. An absent or unrecognised mode is `normal`, never
+  `trust` — it fails closed. `trust` disables the gate entirely, so the panel keeps it on
+  screen in red the whole time it is set
 - **`upload` resolves a key, never a model-supplied path** — `files.ts` rejects relative paths
   and unknown keys; the model never sees a filesystem path at all
 - **`--resume` restores a conversation, not a permission set.** Every restriction flag is
