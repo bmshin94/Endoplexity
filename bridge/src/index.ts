@@ -4,16 +4,16 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import { WebSocketServer, type WebSocket } from "ws";
-import { authorize, authorizeMcp } from "./auth.ts";
-import { handleMcp } from "./mcp.ts";
-import { setPanel, dropPanel, settle, settleGate } from "./relay.ts";
+import { authorize, authorizeMcp, ALLOWED_ORIGIN } from "./auth.ts";
+import { handleMcp, setMode } from "./mcp.ts";
+import { setPanel, dropPanel, settle, settleGate, sendPanel } from "./relay.ts";
 import { runClaude, writeMcpConfig } from "./claude.ts";
 import { runCursor, writeCursorConfig } from "./cursor.ts";
 
 /**
  * The panel picks a model, not a CLI — one dropdown, and which binary answers is
  * an implementation detail. Doubles as the allowlist: this string reaches a spawn
- * argv, so an unknown one falls back rather than being passed through.
+ * argv, so an unknown one is refused rather than being passed through.
  */
 const MODELS: Record<string, typeof runClaude> = {
   sonnet: runClaude,
@@ -25,7 +25,6 @@ const MODELS: Record<string, typeof runClaude> = {
   "cursor-grok-4.5-medium": runCursor,
   "composer-2.5": runCursor,
 };
-const DEFAULT_MODEL = "sonnet";
 
 const HOST = "127.0.0.1"; // never 0.0.0.0 — this socket can drive a logged-in browser
 // Overridable only so a second instance can be smoke-tested without evicting the
@@ -72,8 +71,7 @@ const http = createServer(async (req, res) => {
 });
 
 http.on("upgrade", (req, socket, head) => {
-  const presented = new URL(req.url ?? "/", `http://${HOST}`).searchParams.get("token");
-  if (!authorize(req.headers.origin, presented, token)) {
+  if (!authorize(req.headers.origin)) {
     console.warn(`refused upgrade from origin=${req.headers.origin ?? "(none)"}`);
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
@@ -130,14 +128,15 @@ const usedTools = (event: Record<string, unknown>) =>
     ));
 
 function startTask(
-  ws: WebSocket,
   prompt: unknown,
   model: unknown,
   { isRetry = false, resume = false } = {},
 ) {
-  const send = (event: Record<string, unknown>) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "task-event", event }));
-  };
+  // Resolved at call time, never captured. A panel that drops and comes back
+  // mid-run gets a different socket; a captured one would keep sending into
+  // the dead original, so every tool call would still work (those go through
+  // callPanel) while the panel showed nothing until the run ended.
+  const send = (event: Record<string, unknown>) => void sendPanel({ type: "task-event", event });
   if (typeof prompt !== "string" || !prompt.trim()) return send({ type: "failed", error: "empty prompt" });
   if (running) return send({ type: "failed", error: "a task is already running — stop it first" });
 
@@ -146,11 +145,14 @@ function startTask(
   const resuming = resume ? session : null;
   if (resume && !resuming) return send({ type: "failed", error: "no conversation to reply to" });
 
-  const chosen = resuming
-    ? resuming.model
-    : typeof model === "string" && Object.hasOwn(MODELS, model)
-      ? model
-      : DEFAULT_MODEL;
+  // An unknown model used to fall back to sonnet. That silently ran Claude
+  // whenever a cursor id was stale — which is precisely how you convince
+  // yourself the cursor path works having never once exercised it. The panel's
+  // <select> is the only producer, so the fallback protected nobody.
+  const chosen = resuming ? resuming.model : model;
+  if (typeof chosen !== "string" || !Object.hasOwn(MODELS, chosen)) {
+    return send({ type: "failed", error: `unknown model ${JSON.stringify(model)}` });
+  }
   // A fresh task abandons the old transcript before the new one reports its own
   // id, so a spawn that dies early cannot leave the previous session looking live.
   if (!resuming) session = null;
@@ -199,16 +201,40 @@ function startTask(
       send({ type: "retry", reason: "the agent wrote its tool calls as text instead of calling them — retrying once" });
       // Never resumed: the point of the retry is to discard a transcript whose
       // only content is faked tool calls.
-      startTask(ws, prompt, chosen, { isRetry: true });
+      startTask(prompt, chosen, { isRetry: true });
     }
   };
 
   running = MODELS[chosen](prompt, chosen, onEvent, resuming?.id);
 }
 
+/**
+ * A panel that drops mid-run has 15 seconds to come back before the child is
+ * killed. Chrome tears the side panel document down on every window switch, so
+ * a drop is routine, not exceptional — and every tool call the agent makes
+ * while nobody is listening fails (relay.ts rejects with "the panel
+ * disconnected"), so an un-killed orphan just burns the subscription reading
+ * errors. The agent's own retry habit covers the gap: by the time it routes
+ * around a failed call, the panel is usually back.
+ *
+ * ponytail: 15s is the tuned knob, not a derived constant.
+ */
+const ORPHAN_GRACE_MS = 15_000;
+let orphanTimer: NodeJS.Timeout | null = null;
+
 wss.on("connection", (ws) => {
   console.log("panel connected");
   setPanel(ws);
+  if (orphanTimer) {
+    clearTimeout(orphanTimer);
+    orphanTimer = null;
+  }
+
+  // What the panel cannot know on its own after a remount: whether a task is
+  // still running, and whether the last one left a transcript to reply to.
+  // `resumable` used to reset to false on every remount, which is why Reply
+  // went dark after a window switch even though the bridge still had the id.
+  ws.send(JSON.stringify({ type: "hello", running: running !== null, resumable: session !== null }));
 
   ws.on("message", (raw) => {
     let msg;
@@ -220,20 +246,47 @@ wss.on("connection", (ws) => {
     if (msg.type === "ping") ws.send(JSON.stringify({ type: "pong", at: Date.now() }));
     else if (msg.type === "tool-result") settle(msg);
     else if (msg.type === "gate-reply") settleGate(msg);
-    else if (msg.type === "task") startTask(ws, msg.prompt, msg.model, { resume: msg.resume === true });
-    else if (msg.type === "stop") running?.kill();
+    else if (msg.type === "task") {
+      // The mode is the human's, so it arrives with the task and is enforced in
+      // the bridge. It is never in a prompt and the model never sees it, so
+      // nothing the agent says can widen its own permissions.
+      setMode(msg.mode);
+      startTask(msg.prompt, msg.model, { resume: msg.resume === true });
+    } else if (msg.type === "stop") running?.kill();
+    // The panel archived its transcript and started clean, so the CLI session
+    // must go too — otherwise a Reply after the next remount would resume the
+    // conversation the user just put away. Only the id is dropped; a task still
+    // running is left alone, and the panel disables New while one is.
+    else if (msg.type === "new-session") session = null;
   });
 
   ws.on("close", () => {
     dropPanel(ws);
     console.log("panel disconnected");
+    if (!running || orphanTimer) return;
+    orphanTimer = setTimeout(() => {
+      orphanTimer = null;
+      if (!running) return;
+      console.warn(`no panel for ${ORPHAN_GRACE_MS / 1000}s — killing the task it was driving`);
+      running.kill();
+    }, ORPHAN_GRACE_MS);
   });
+});
+
+// Autostart means a second `npm start` is a normal mistake, not a rare one, and
+// an unhandled EADDRINUSE prints a stack trace that reads like a broken install.
+http.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code !== "EADDRINUSE") throw err;
+  console.log(`a bridge is already listening on ${HOST}:${PORT} — you don't need this one`);
+  process.exit(0);
 });
 
 http.listen(PORT, HOST, () => {
   console.log(`bridge listening on ws://${HOST}:${PORT}`);
-  console.log(`token: ${token}`);
-  console.log("paste that into the side panel once; it is stored in chrome.storage.local");
+  // The token is no longer typed by anyone — the panel fetches it from /pair.
+  // Printing the origin instead is what makes a refusal diagnosable: index.ts
+  // logs the origin it refused, and this is the one it wanted.
+  console.log(`paired extension: ${ALLOWED_ORIGIN}`);
   console.log(`mcp config for claude: ${configPath}`);
   console.log(`isolated cursor profile: ${cursorDir}`);
 });

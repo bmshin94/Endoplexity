@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { serialize } from "../../extension/ax.js";
-import { check, remember } from "../src/gate.ts";
+import { check, remember, labelFor, rememberApproval, resetApprovals } from "../src/gate.ts";
 import { askPanel, setPanel, dropPanel, panelConnected, settle, settleGate } from "../src/relay.ts";
 import { relay } from "../src/mcp.ts";
 
@@ -25,6 +25,13 @@ const page = () => [
   node("1", "RootWebArea", { name: "Apply", childIds: ["2", "3"] }),
   node("2", "button", { name: "Submit Application", backendDOMNodeId: 11 }),
   node("3", "link", { name: "Read more", backendDOMNodeId: 12 }),
+];
+
+// A consent wall whose only control is "Accept all cookies" — the case the
+// IRREVERSIBLE regex must no longer catch, since accept/agree came out of it.
+const cookiePage = () => [
+  node("1", "RootWebArea", { name: "Consent", childIds: ["2"] }),
+  node("2", "button", { name: "Accept all cookies", backendDOMNodeId: 11 }),
 ];
 
 // Enough of a WebSocket for the relay — same fake relay.test.ts uses.
@@ -131,4 +138,80 @@ test("a denied click returns an isError result telling the model not to retry", 
   const result = await relay("click", { ref: submitRef });
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /do not retry/i);
+});
+
+test("a cookie-consent 'Accept all' button is not gated for click", () => {
+  const { text, refs } = serialize(cookiePage(), "f0");
+  remember(text);
+  const [acceptRef] = refs.keys();
+  assert.equal(check("click", { ref: acceptRef }), null);
+});
+
+test("a cookie-consent page does not gate Enter either", () => {
+  const { text } = serialize(cookiePage(), "f0");
+  remember(text);
+  assert.equal(check("key", { name: "Enter" }), null);
+});
+
+test("watch gates a plain type that normal lets through", () => {
+  const { text, refs } = serialize(page(), "f0");
+  remember(text);
+  const [, linkRef] = refs.keys();
+  resetApprovals();
+  assert.equal(check("type", { ref: linkRef, text: "hi" }), null);
+  assert.equal(check("type", { ref: linkRef, text: "hi" }, "watch"), `type ${linkRef} [link] "Read more"`);
+});
+
+test("watch does not gate reads: snapshot, tabs, hover, scroll", () => {
+  resetApprovals();
+  assert.equal(check("snapshot", {}, "watch"), null);
+  assert.equal(check("tabs", {}, "watch"), null);
+  assert.equal(check("hover", { ref: "@f0e1" }, "watch"), null);
+  assert.equal(check("scroll", {}, "watch"), null);
+});
+
+test("trust gates nothing, including a submit-labelled click", () => {
+  const { text, refs } = serialize(page(), "f0");
+  remember(text);
+  const [submitRef] = refs.keys();
+  assert.equal(check("click", { ref: submitRef }, "trust"), null);
+});
+
+test("an unknown or missing mode behaves exactly like normal — never like trust", () => {
+  const { text, refs } = serialize(page(), "f0");
+  remember(text);
+  const [submitRef] = refs.keys();
+  const expected = `click ${submitRef} [button] "Submit Application"`;
+  assert.equal(check("click", { ref: submitRef }), expected); // mode omitted entirely
+  assert.equal(check("click", { ref: submitRef }, undefined), expected);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.equal(check("click", { ref: submitRef }, "yolo" as any), expected);
+});
+
+test("in watch, an approved tool stops re-asking for the rest of the task", () => {
+  const { text, refs } = serialize(page(), "f0");
+  remember(text);
+  const [submitRef] = refs.keys();
+  resetApprovals();
+  assert.ok(check("click", { ref: submitRef }, "watch"));
+  rememberApproval("click", { ref: submitRef });
+  assert.equal(check("click", { ref: submitRef }, "watch"), null);
+  resetApprovals();
+});
+
+test("in normal, a submit-labelled click keeps asking even after an approval was recorded", () => {
+  const { text, refs } = serialize(page(), "f0");
+  remember(text);
+  const [submitRef] = refs.keys();
+  rememberApproval("click", { ref: submitRef }); // as if watch mode had recorded it
+  assert.equal(check("click", { ref: submitRef }), `click ${submitRef} [button] "Submit Application"`);
+  resetApprovals();
+});
+
+test("labelFor returns the label for a known ref and undefined for an unknown one", () => {
+  const { text, refs } = serialize(page(), "f0");
+  remember(text);
+  const [submitRef] = refs.keys();
+  assert.equal(labelFor(submitRef), '[button] "Submit Application"');
+  assert.equal(labelFor("@f0e999"), undefined);
 });

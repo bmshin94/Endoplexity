@@ -23,6 +23,11 @@ const CONFIG_PATH = fileURLToPath(new URL("../../.comet-mcp.json", import.meta.u
  *  5. Same run asked the user to "share your resume file". It cannot receive
  *     one, and the upload tool's own description says so — but that description
  *     only arrives after a ToolSearch this run never made.
+ *  6. A five-source research task answered entirely from memory: a plausible
+ *     comparison table, every source URL recalled rather than visited, zero tool
+ *     calls, 1 turn, $0.1354 / 15,432 tokens. That is the worst failure this
+ *     thing has, because it reads as success — and browsing is strictly more
+ *     work than recalling, so nothing else in the product argues against it.
  *
  * Deliberately generic — no site names. A prompt that knows about Google is a
  * prompt that is wrong on Greenhouse.
@@ -34,6 +39,7 @@ export const BRIEFING_CORE = [
   "Refs like @f1e7 are only valid on the most recent page you were given.",
   "You cannot be sent files: upload attaches one the user configured by key, so never ask for a file or a path.",
   "If an action did not do what you expected, take a different route rather than repeating it.",
+  "Never answer from memory: every fact and every URL you report must come from a page you loaded in this run.",
 ].join(" ");
 
 // Habit 1 is claude-only — cursor hands MCP tools to the model directly, with no

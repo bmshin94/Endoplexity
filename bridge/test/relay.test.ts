@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { setPanel, dropPanel, settle, callPanel, panelConnected } from "../src/relay.ts";
+import { setPanel, dropPanel, settle, callPanel, panelConnected, sendPanel } from "../src/relay.ts";
 
 // Enough of a WebSocket for the relay: it only ever reads readyState and sends.
 function fakePanel() {
@@ -45,6 +45,27 @@ test("calls in flight fail when the panel goes away", async () => {
 
 test("refuses to call at all with no panel connected", async () => {
   await assert.rejects(callPanel("snapshot", {}), /no side panel connected/);
+});
+
+test("task events follow the panel that reconnected, not the one that started the run", () => {
+  // The bug this pins down: startTask captured the socket that sent the `task`
+  // message, so a panel that dropped and came back mid-run received nothing for
+  // the rest of the task while every tool call still worked. Reconnect logic in
+  // the panel is decoration unless the send resolves the socket at call time.
+  const first = fakePanel();
+  const second = fakePanel();
+  setPanel(first as never);
+  setPanel(second as never);
+
+  assert.equal(sendPanel({ type: "task-event", event: { type: "assistant" } }), true);
+  assert.equal(first.sent.length, 0);
+  assert.equal(second.sent.length, 1);
+  assert.equal(second.sent[0].type, "task-event");
+  dropPanel(second as never);
+});
+
+test("sendPanel reports failure rather than throwing with no panel", () => {
+  assert.equal(sendPanel({ type: "task-event", event: {} }), false);
 });
 
 test("ignores an answer to a call that no longer exists", () => {

@@ -4,125 +4,1007 @@
     <meta charset="utf-8" />
     <title>CometClone</title>
     <style>
+      /*
+        An instrument clamped to the side of a browser. See DESIGN.md for the
+        reasoning; the short version is that this panel sits against arbitrary
+        websites, so it must never borrow their surface, and it is welded to
+        Chrome's own side-panel chrome, so it must follow the browser's theme
+        rather than committing to one. Hence: tinted neutrals in both
+        directions, never #fff and never #000.
+
+        Colour has exactly three jobs — live/primary, needs-you, danger. A panel
+        with no colour on it is a panel where nothing is happening, and that is
+        information. Everything else is neutral by construction.
+      */
       :root {
-        color-scheme: light dark;
-        --edge: color-mix(in srgb, currentColor 15%, transparent);
-        --muted: color-mix(in srgb, currentColor 60%, transparent);
-        --accent: #f59e0b;
+        /* Pinned per theme, not "light dark": checkboxes, selects and scrollbars
+           are painted by the UA off this property, and left to negotiate with the
+           OS on their own they can end up dark inside a light panel. */
+        color-scheme: light;
+
+        --sans: system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, sans-serif;
+        --mono: ui-monospace, "Cascadia Mono", "SF Mono", "JetBrains Mono", Consolas, monospace;
+
+        --t-micro: 10.5px;
+        --t-meta: 11.5px;
+        --t-ui: 12.5px;
+        --t-body: 14px;
+        --t-lead: 15px;
+
+        --r-xs: 6px;
+        --r-sm: 9px;
+        --r-md: 12px;
+
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+        --fast: 140ms;
+        --slow: 200ms;
+
+        --bg: oklch(0.982 0.004 150);
+        --raise: oklch(0.998 0.002 150);
+        --sink: oklch(0.955 0.006 150);
+        --line: oklch(0.895 0.008 150);
+        --line-soft: oklch(0.932 0.006 150);
+        --text: oklch(0.25 0.014 150);
+        --text-soft: oklch(0.44 0.012 150);
+        --text-faint: oklch(0.56 0.01 150);
+        --accent: oklch(0.52 0.13 152);
+        --accent-hi: oklch(0.46 0.13 152);
+        --accent-wash: oklch(0.52 0.13 152 / 0.1);
+        --on-accent: oklch(0.99 0.01 150);
+        --gate: oklch(0.5 0.12 75);
+        --gate-wash: oklch(0.62 0.13 75 / 0.13);
+        --danger: oklch(0.52 0.19 25);
+        --shadow-sm: 0 1px 1px oklch(0.25 0.014 150 / 0.04), 0 2px 6px oklch(0.25 0.014 150 / 0.05);
+        --shadow-md: 0 2px 4px oklch(0.25 0.014 150 / 0.06), 0 14px 32px oklch(0.25 0.014 150 / 0.12);
       }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --bg: oklch(0.185 0.008 150);
+          --raise: oklch(0.228 0.009 150);
+          --sink: oklch(0.155 0.008 150);
+          --line: oklch(0.325 0.01 150);
+          --line-soft: oklch(0.268 0.009 150);
+          --text: oklch(0.945 0.006 150);
+          --text-soft: oklch(0.745 0.01 150);
+          --text-faint: oklch(0.63 0.01 150);
+          /* Deeper than the light theme's mirror image would be: a 0.72-lightness
+             fill on a 0.185 ground is a lozenge of pure chroma, and the Run
+             button stopped reading as a control and started reading as candy. */
+          --accent: oklch(0.68 0.142 152);
+          --accent-hi: oklch(0.75 0.15 152);
+          --accent-wash: oklch(0.72 0.15 152 / 0.15);
+          --on-accent: oklch(0.19 0.03 152);
+          --gate: oklch(0.79 0.14 78);
+          --gate-wash: oklch(0.79 0.14 78 / 0.14);
+          --danger: oklch(0.7 0.17 25);
+          --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.35);
+          --shadow-md: 0 4px 10px oklch(0 0 0 / 0.4), 0 16px 40px oklch(0 0 0 / 0.35);
+        }
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
       body {
         margin: 0;
-        padding: 12px;
-        font: 13px/1.5 system-ui, sans-serif;
+        /* The panel is ~360px and the browser owns the horizontal axis. Nothing
+           in here may ever produce a sideways scrollbar. */
+        overflow-x: hidden;
+        font: var(--t-ui) / 1.5 var(--sans);
+        color: var(--text);
+        background: var(--bg);
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        height: 100vh;
-        box-sizing: border-box;
+        -webkit-font-smoothing: antialiased;
       }
+      ::selection { background: var(--accent-wash); }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+        border-radius: var(--r-xs);
+      }
+      /* Standard properties, not a re-skinned scrollbar: the panel is narrow
+         enough that a 15px default eats 4% of the reading width. */
+      #chat, #log, .table-scroll, pre { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+      .icon { width: 16px; height: 16px; flex: none; display: block; }
+
+      /* ---- header ------------------------------------------------------ */
       header {
+        flex: none;
         display: flex;
         align-items: center;
         gap: 8px;
-        font-weight: 600;
+        padding: 11px 14px 10px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .mark { width: 16px; height: 16px; flex: none; color: var(--text); }
+      .wordmark { font-size: 13px; font-weight: 600; letter-spacing: -0.012em; }
+      .wordmark span { color: var(--text-faint); font-weight: 500; }
+      .conn {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--t-meta);
+        color: var(--text-faint);
+        font-variant-numeric: tabular-nums;
       }
       #dot {
-        width: 8px;
-        height: 8px;
+        width: 5px;
+        height: 5px;
         border-radius: 50%;
-        background: #999;
         flex: none;
+        background: var(--text-faint);
+        transition: background var(--fast) var(--ease);
       }
-      #dot.up { background: #22c55e; }
-      #dot.down { background: #ef4444; }
-      #status { font-weight: 400; color: var(--muted); }
-      input, button, textarea, select {
+      #dot.up { background: var(--accent); }
+      #dot.down { background: var(--danger); }
+
+      /* ---- provenance: which tab is being driven ------------------------ */
+      /*
+        Never hidden, never collapsed. The worst failure this project has had
+        was a form filled perfectly in a tab nobody was watching, with every
+        tool reporting success. This row is the standing answer to "where".
+      */
+      #where {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        padding: 7px 14px;
+        background: var(--sink);
+        border-bottom: 1px solid var(--line-soft);
+      }
+      #where-state { width: 13px; height: 13px; color: var(--text-faint); }
+      #where-state.run { color: var(--accent); animation: pulse 1.6s var(--ease) infinite; }
+      #where-state.done { color: var(--accent); }
+      #where-state.fail { color: var(--danger); }
+      #where-title {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: var(--t-meta);
+        color: var(--text-soft);
+      }
+      #where-title.idle { color: var(--text-faint); font-style: italic; }
+      #where-mode {
+        flex: none;
+        font-size: var(--t-micro);
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+      }
+      /* Trust turns off the only safety feature there is, so it can never be
+         quietly in force. */
+      #where-mode.trust { color: var(--danger); border-color: var(--danger); }
+      #where-mode.watch { color: var(--gate); border-color: var(--gate); }
+
+      /* ---- transcript --------------------------------------------------- */
+      #chat {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        overflow-wrap: anywhere;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      #chat > * { animation: rise var(--slow) var(--ease) both; }
+      @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+      @keyframes pulse { 50% { opacity: 0.35; } }
+
+      /* What you typed, read back exactly as typed. Subordinate to the answer
+         on purpose: it is the question, not the content. */
+      .msg.user {
+        align-self: flex-end;
+        max-width: 90%;
+        margin: 2px 0 14px;
+        padding: 7px 11px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md) var(--r-md) var(--r-xs) var(--r-md);
+        background: var(--raise);
+        box-shadow: var(--shadow-sm);
+        white-space: pre-wrap;
+        font-size: var(--t-ui);
+      }
+
+      /* ---- the answer ---------------------------------------------------- */
+      .msg.assistant {
+        margin: 2px 0 16px;
+        font-size: var(--t-body);
+        line-height: 1.62;
+        /* Chrome's side panel is user-resizable; the cap is what stops a
+           widened panel from producing 140-character lines. */
+        max-width: 68ch;
+      }
+      .msg.assistant > :first-child { margin-top: 0; }
+      .msg.assistant > :last-child { margin-bottom: 0; }
+      .msg.assistant p { margin: 0 0 10px; }
+      .msg.assistant h1, .msg.assistant h2, .msg.assistant h3,
+      .msg.assistant h4, .msg.assistant h5, .msg.assistant h6 {
+        margin: 18px 0 6px;
+        line-height: 1.3;
+        letter-spacing: -0.011em;
+        font-weight: 640;
+      }
+      .msg.assistant h1 { font-size: 17.5px; font-weight: 680; letter-spacing: -0.016em; }
+      .msg.assistant h2 { font-size: var(--t-lead); font-weight: 660; }
+      .msg.assistant h3 { font-size: var(--t-body); font-weight: 660; }
+      .msg.assistant h4, .msg.assistant h5, .msg.assistant h6 {
+        font-size: var(--t-ui);
+        color: var(--text-soft);
+      }
+      .msg.assistant ul, .msg.assistant ol { margin: 0 0 10px; padding-left: 19px; }
+      .msg.assistant li { margin-bottom: 4px; }
+      .msg.assistant li > ul, .msg.assistant li > ol { margin: 5px 0 0; }
+      .msg.assistant li::marker { color: var(--text-faint); }
+      .msg.assistant li.task {
+        list-style: none;
+        margin-left: -19px;
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+      }
+      .msg.assistant li.task input {
+        margin: 0;
+        accent-color: var(--accent);
+        translate: 0 1.5px;
+      }
+      /* A tinted block, not a side stripe. */
+      .msg.assistant blockquote {
+        margin: 0 0 10px;
+        padding: 8px 11px;
+        border-radius: var(--r-sm);
+        background: var(--sink);
+        color: var(--text-soft);
+      }
+      .msg.assistant blockquote > :last-child { margin-bottom: 0; }
+      .msg.assistant a {
+        color: var(--accent);
+        text-decoration-color: color-mix(in oklch, var(--accent) 40%, transparent);
+        text-underline-offset: 2px;
+      }
+      .msg.assistant a:hover { text-decoration-color: currentColor; }
+      .msg.assistant del { color: var(--text-faint); text-decoration-thickness: 1px; }
+      .msg.assistant strong { font-weight: 650; }
+      .msg.assistant hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+      .msg.assistant code {
+        font-family: var(--mono);
+        font-size: 0.83em;
+        background: var(--sink);
+        padding: 1.5px 5px;
+        border-radius: var(--r-xs);
+      }
+      .msg.assistant pre {
+        margin: 0 0 10px;
+        padding: 10px 11px;
+        overflow-x: auto;
+        background: var(--sink);
+        border: 1px solid var(--line-soft);
+        border-radius: var(--r-sm);
+      }
+      .msg.assistant pre code {
+        background: none;
+        padding: 0;
+        font-size: 11px;
+        line-height: 1.55;
+      }
+
+      /* A wide table scrolls inside its own box, so it can never widen the panel. */
+      .table-scroll { overflow-x: auto; margin: 0 0 12px; }
+      .msg.assistant table { border-collapse: collapse; font-size: var(--t-meta); }
+      .msg.assistant th, .msg.assistant td {
+        text-align: left;
+        vertical-align: top;
+        padding: 5px 14px 5px 0;
+        white-space: nowrap;
+      }
+      .msg.assistant th {
+        font-size: var(--t-micro);
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 4px;
+      }
+      .msg.assistant td { border-bottom: 1px solid var(--line-soft); }
+      .msg.assistant tbody tr:last-child td { border-bottom: 0; }
+
+      /* Native MathML: the browser owns the layout, this only has to fit it in. */
+      .msg.assistant math { font-size: 1.05em; }
+      .math-block {
+        margin: 12px 0;
+        padding: 2px 0;
+        overflow-x: auto;
+        text-align: center;
+      }
+      .math-block math { font-size: 1.15em; }
+      /* Math that would not parse shows its source rather than a blank. */
+      .math-raw { color: var(--text-soft); }
+
+      /* ---- the tool trace ------------------------------------------------ */
+      /*
+        Deliberately recessive. The verdict on the last version was that too
+        much attention was drawn to tool usage, so: 11.5px, soft grey, one
+        sentence, behind an indent rail, everything else folded away. It
+        recedes through size, weight and position — not through low contrast,
+        which would have cost accessibility to buy the same effect.
+        A run of consecutive calls shares one <div class="trace">, which is what
+        makes the rail a single unbroken line by construction.
+      */
+      .trace {
+        margin: 0 0 14px;
+        border-left: 1px solid var(--line);
+      }
+      .tool {
+        position: relative;
+        padding: 3px 0 3px 15px;
+        font-size: var(--t-meta);
+        color: var(--text-soft);
+      }
+      .tool::before {
+        content: "";
+        position: absolute;
+        left: -3px;
+        top: 8px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--text-faint);
+        transition: background var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+      }
+      /* Running differs from done by FORM as well as hue — the ring survives
+         both prefers-reduced-motion and colour blindness. */
+      .tool.running::before {
+        background: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-wash);
+        animation: pulse 1.6s var(--ease) infinite;
+      }
+      .tool.failed::before { background: var(--danger); box-shadow: 0 0 0 3px var(--gate-wash); }
+      /* Only the verdict is red, not the whole sentence. A failed call is worth
+         noticing; it is not worth a red line of body text in a trace that is
+         supposed to stay out of the way. */
+      .tool .verdict { color: var(--danger); }
+      .tool > summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 1px 0;
+        transition: color var(--fast) var(--ease);
+      }
+      .tool > summary::-webkit-details-marker { display: none; }
+      .tool > summary:hover { color: var(--text); }
+      .tool[open] > summary { color: var(--text); }
+      .tool > pre {
+        margin: 6px 0 3px;
+        padding: 8px 9px;
+        max-height: 190px;
+        overflow: auto;
+        white-space: pre-wrap;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        line-height: 1.5;
+        color: var(--text-soft);
+        background: var(--sink);
+        border-radius: var(--r-xs);
+      }
+
+      /* ---- the quiet rows: notes, gate history, cost --------------------- */
+      .note, .gate-row {
+        margin: 0 0 12px;
+        padding-left: 15px;
+        font-size: var(--t-meta);
+        color: var(--text-soft);
+      }
+      .gate-row.ok { color: var(--accent); }
+      .gate-row.failed { color: var(--danger); }
+      .chip {
+        align-self: flex-start;
+        margin: 0 0 14px;
+        padding: 3px 9px;
+        font-family: var(--mono);
+        font-size: var(--t-micro);
+        font-variant-numeric: tabular-nums;
+        color: var(--text-faint);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+      }
+
+      /* ---- empty state ---------------------------------------------------- */
+      #empty { margin: auto 0 6px; animation: none; }
+      /* Hidden, not removed — New Session brings it back, and its seed buttons
+         are wired once at load. */
+      #empty.gone { display: none; }
+      #empty p {
+        margin: 0 0 16px;
+        font-size: 13px;
+        line-height: 1.55;
+        color: var(--text-soft);
+        max-width: 42ch;
+      }
+      .label {
+        font-size: var(--t-micro);
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-bottom: 8px;
+      }
+      .seed {
+        display: block;
+        width: 100%;
+        height: auto;
+        text-align: left;
         font: inherit;
-        padding: 6px 10px;
-        border-radius: 6px;
-        border: 1px solid var(--edge);
-        background: transparent;
-        color: inherit;
+        font-size: var(--t-ui);
+        line-height: 1.45;
+        color: var(--text);
+        padding: 9px 11px;
+        margin-bottom: 6px;
+        border: 1px solid var(--line-soft);
+        border-radius: var(--r-sm);
+        background: var(--raise);
+        cursor: pointer;
+        transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
       }
-      button { cursor: pointer; }
-      button:hover:not(:disabled) { background: var(--edge); }
-      button:disabled { opacity: 0.4; cursor: default; }
-      #prompt, #profile { resize: vertical; width: 100%; box-sizing: border-box; }
-      .row { display: flex; gap: 6px; }
-      .row button { flex: 1; }
-      /* The dropdown keeps its own width so the three buttons stay equal. */
-      #model { flex: none; padding: 6px; }
-      #setup { display: none; flex-direction: column; gap: 6px; }
-      #setup.show { display: flex; }
+      .seed:hover { border-color: var(--accent); transform: translateX(2px); }
+
+      /* ---- live step ------------------------------------------------------ */
+      #step {
+        flex: none;
+        display: none;
+        align-items: center;
+        gap: 8px;
+        padding: 0 14px 10px;
+        font-size: var(--t-meta);
+        color: var(--text-soft);
+      }
+      #step.on { display: flex; }
+      #step::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-wash);
+        flex: none;
+        animation: pulse 1.6s var(--ease) infinite;
+      }
+
+      /* ---- reading an earlier session ---------------------------------------- */
+      /*
+        Without this the only signal that you are not looking at the live
+        conversation is a greyed-out Reply button, which reads as a bug. Same
+        reasoning as #where: the panel says which thing you are looking at.
+      */
+      #viewing {
+        display: none;
+        flex: none;
+        align-items: center;
+        gap: 8px;
+        margin: 0 12px 10px;
+        padding: 7px 8px 7px 12px;
+        font-size: var(--t-meta);
+        color: var(--text-soft);
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--sink);
+      }
+      #viewing.show { display: flex; animation: rise var(--slow) var(--ease) both; }
+      #viewing span { flex: 1; min-width: 0; }
+      #to-current { flex: none; height: 23px; padding: 0 9px; font-size: var(--t-meta); }
+
+      /* ---- approval -------------------------------------------------------- */
       #gate {
         display: none;
+        flex: none;
         flex-direction: column;
-        gap: 6px;
-        padding: 8px;
-        border: 1px solid var(--accent);
-        border-radius: 6px;
-        background: color-mix(in srgb, var(--accent) 15%, transparent);
+        gap: 9px;
+        margin: 0 12px 10px;
+        padding: 11px 12px;
+        border: 1px solid var(--gate);
+        border-radius: var(--r-md);
+        background: var(--gate-wash);
       }
-      #gate.show { display: flex; }
-      #gate-action { font-family: ui-monospace, monospace; font-size: 12px; }
+      #gate.show { display: flex; animation: rise var(--slow) var(--ease) both; }
+      #gate .head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--t-micro);
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--gate);
+      }
+      #gate .head .icon { width: 13px; height: 13px; }
+      #gate-action {
+        font-family: var(--mono);
+        font-size: var(--t-meta);
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+      #gate .pair { display: flex; gap: 7px; }
+      #gate .pair button { flex: 1; }
+
+      /* ---- composer --------------------------------------------------------- */
+      .composer {
+        flex: none;
+        margin: 0 12px 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--raise);
+        box-shadow: var(--shadow-sm);
+        transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+      }
+      .composer:focus-within {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-wash);
+      }
+      #prompt {
+        display: block;
+        width: 100%;
+        border: 0;
+        background: none;
+        color: inherit;
+        font: 13px/1.5 var(--sans);
+        resize: none;
+        padding: 10px 12px 4px;
+        max-height: 148px;
+      }
+      #prompt:focus { outline: none; }
+      #prompt::placeholder { color: var(--text-faint); }
+      /* nowrap, and the selects give up the space instead. Flexbox decides
+         wrapping BEFORE it shrinks anything, so `wrap` meant the row broke and
+         put the primary action alone on a second line rather than letting two
+         selects lose 20px each. At their 56px floor the whole row needs 266px,
+         which clears Chrome's ~320px minimum panel width. */
+      .controls {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px 8px;
+      }
+      /*
+        appearance: base-select hands the dropdown to CSS.
+
+        Without it the popup is drawn by the OS — white sheet, blue highlight,
+        no hover feedback and nothing to animate, no matter what the page says.
+        It is also the reason to keep a real <select> rather than build a
+        listbox out of divs: this keeps type-ahead, arrow keys, Home/End,
+        Escape, and the screen-reader semantics, and panel.js still just reads
+        `.value`. Needs Chrome 135+; older Chrome quietly falls back to the
+        native popup, which is the old behaviour rather than a broken one.
+      */
+      select, ::picker(select) { appearance: base-select; }
+
+      /* The two selects share whatever the buttons leave, so the whole row fits
+         on one line at 360px. Wrapping was not a layout, it was a bug that put
+         the primary action on a line of its own. */
+      select {
+        height: 27px;
+        flex: 1 1 auto;
+        min-width: 56px;
+        max-width: 104px;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        font: var(--t-meta) / 1 var(--sans);
+        color: var(--text-soft);
+        background: transparent;
+        /* Transparent rather than absent, so nothing shifts on hover. */
+        border: 1px solid transparent;
+        border-radius: var(--r-sm);
+        padding: 0 5px 0 8px;
+        cursor: pointer;
+        transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+      }
+      select:hover { color: var(--text); background: var(--sink); }
+      select:open { color: var(--text); background: var(--sink); }
+      /* The UA's picker icon is a filled triangle. Replaced with the same
+         chevron the rest of the panel uses, drawn as a mask so it inherits
+         currentColor. A data: URI is inline, so the CSP has nothing to block. */
+      select::picker-icon {
+        content: "";
+        width: 11px;
+        height: 11px;
+        margin-left: auto;
+        background: currentColor;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E") center / 11px no-repeat;
+        color: var(--text-faint);
+        transition: rotate var(--slow) var(--ease), color var(--fast) var(--ease);
+      }
+      select:hover::picker-icon { color: var(--text-soft); }
+      select:open::picker-icon { rotate: 180deg; color: var(--accent); }
+
+      /* The popup itself. It opens upward on its own, because the composer sits
+         at the bottom of the panel and Chrome flips it to fit. */
+      ::picker(select) {
+        min-width: 172px;
+        padding: 5px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--raise);
+        box-shadow: var(--shadow-md);
+        opacity: 0;
+        translate: 0 6px;
+        transition: opacity var(--fast) var(--ease), translate var(--fast) var(--ease),
+          display var(--fast) allow-discrete, overlay var(--fast) allow-discrete;
+      }
+      ::picker(select):popover-open { opacity: 1; translate: 0 0; }
+      /* Without @starting-style there is no state to animate FROM, so the open
+         transition simply does not play. */
+      @starting-style {
+        ::picker(select):popover-open { opacity: 0; translate: 0 6px; }
+      }
+      /*
+        Plain selectors, NOT `::picker(select) option`. A descendant combinator
+        after a pseudo-element is invalid, so the scoped version parsed as
+        garbage and every rule below was silently dropped — the picker opened
+        looking exactly like the native one it was supposed to replace.
+        Nothing leaks into the closed trigger, because that renders a
+        <selectedcontent> holding a clone of the option's CHILD NODES; the
+        option element itself is never in the button.
+      */
+      optgroup { padding: 0; border: 0; }
+      optgroup > legend {
+        padding: 7px 9px 3px;
+        font-size: var(--t-micro);
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+      }
+      option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 9px;
+        border-radius: var(--r-xs);
+        font: var(--t-ui) / 1.3 var(--sans);
+        color: var(--text-soft);
+        cursor: pointer;
+        transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+      }
+      option:hover, option:focus {
+        background: var(--sink);
+        color: var(--text);
+        outline: none;
+      }
+      option:checked { color: var(--text); font-weight: 560; }
+      /* The tick moves to the trailing edge, so every label starts on the same
+         left margin whether or not it is the selected one. */
+      option::checkmark {
+        order: 1;
+        margin-left: auto;
+        color: var(--accent);
+      }
+
+      /* Secondary controls are ghosts: transparent until pointed at. Boxing every
+         one in a hairline made the composer read as a toolbar of equal-weight
+         buttons, when only one of them is the action. */
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 27px;
+        padding: 0 11px;
+        font: var(--t-ui) / 1 var(--sans);
+        color: var(--text-soft);
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--r-sm);
+        cursor: pointer;
+        transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease),
+          color var(--fast) var(--ease), opacity var(--fast) var(--ease);
+      }
+      button .icon { width: 14px; height: 14px; }
+      button.square { width: 27px; flex: none; padding: 0; }
+      #run { flex: none; }
+      button:hover:not(:disabled) { background: var(--sink); color: var(--text); }
+      button:active:not(:disabled) { translate: 0 0.5px; }
+      button:disabled { opacity: 0.35; cursor: default; }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--on-accent);
+        font-weight: 560;
+        padding: 0 13px;
+      }
+      button.primary:hover:not(:disabled) {
+        background: var(--accent-hi);
+        border-color: var(--accent-hi);
+        color: var(--on-accent);
+      }
+      /* Approve and Deny are one decision, so Deny keeps a visible edge rather
+         than disappearing next to a filled button. */
+      #gate-deny { border-color: var(--line); color: var(--text); }
+      #gate-deny:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: transparent; }
+
+      /* ---- footer disclosures ------------------------------------------------ */
+      footer {
+        flex: none;
+        display: flex;
+        gap: 16px;
+        padding: 9px 14px 11px;
+        border-top: 1px solid var(--line-soft);
+      }
+      footer summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        list-style: none;
+        font-size: var(--t-meta);
+        color: var(--text-faint);
+        transition: color var(--fast) var(--ease);
+      }
+      footer summary::-webkit-details-marker { display: none; }
+      footer summary:hover { color: var(--text); }
+      footer summary .icon { width: 13px; height: 13px; }
+      footer details[open] summary { color: var(--text); }
+      /* The disclosure opens as a sheet above the composer, so the summary row
+         never jumps and the transcript is never pushed off screen. */
+      #profile, #log, #history {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 44px;
+        z-index: 20;
+        padding: 10px 11px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--raise);
+        box-shadow: var(--shadow-md);
+        color: inherit;
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.55;
+        animation: rise var(--slow) var(--ease) both;
+      }
+      #profile { resize: vertical; min-height: 104px; }
+      #profile:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash), var(--shadow-md); }
       #log {
-        flex: 1;
-        overflow-y: auto;
-        margin: 0;
-        padding: 8px;
-        border: 1px solid var(--edge);
-        border-radius: 6px;
+        max-height: 44vh;
+        overflow: auto;
         white-space: pre-wrap;
-        font-family: ui-monospace, monospace;
-        font-size: 12px;
+        color: var(--text-soft);
+        margin: 0;
+      }
+
+      /* The session list. Sessions are stored newest first and index 0 is the
+         live one, so the list needs no sorting and no "current" section. */
+      #history {
+        max-height: 44vh;
+        overflow: auto;
+        padding: 5px;
+        font-family: var(--sans);
+      }
+      .hrow {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        width: 100%;
+        height: auto;
+        padding: 7px 9px;
+        text-align: left;
+        font-size: var(--t-ui);
+        color: var(--text-soft);
+        border-radius: var(--r-xs);
+      }
+      .hrow:hover { background: var(--sink); color: var(--text); }
+      .hrow.on { color: var(--text); font-weight: 560; }
+      /* The dot marks what you are reading. A colour-only cue would be the one
+         thing on this panel carrying meaning in hue alone, so it also gets the
+         only bold weight in the list. */
+      .hrow.on::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        margin-left: -9px;
+        margin-right: 4px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex: none;
+        translate: 0 -2px;
+      }
+      .htitle {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .hwhen {
+        flex: none;
+        font-size: var(--t-micro);
+        font-variant-numeric: tabular-nums;
+        color: var(--text-faint);
+      }
+      .hempty { padding: 8px 9px; font-size: var(--t-meta); color: var(--text-faint); }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; }
       }
     </style>
   </head>
   <body>
-    <header><span id="dot"></span>CometClone <span id="status">starting…</span></header>
+    <!-- One sprite, 16px grid, 1.5px stroke, currentColor. A strict CSP rules
+         out an icon font or any external asset, and <use> means each shape is
+         defined once however many times it appears. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <symbol id="i-mark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="10.6" cy="5.4" r="3.1" fill="currentColor" stroke="none" />
+        <path d="M7.4 8.6 1.6 14.4" opacity=".55" />
+        <path d="M10.4 10.2 6.6 14" opacity=".3" />
+      </symbol>
+      <symbol id="i-dot" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="8" cy="8" r="3.4" />
+      </symbol>
+      <symbol id="i-live" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="8" cy="8" r="2.6" fill="currentColor" stroke="none" />
+        <circle cx="8" cy="8" r="5.9" opacity=".4" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.4 8.4 6.4 11.4 12.6 4.8" />
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <path d="M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8" />
+      </symbol>
+      <symbol id="i-run" viewBox="0 0 16 16">
+        <path d="M4.6 3.3 12.6 8l-8 4.7z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 16 16">
+        <rect x="4.6" y="4.6" width="6.8" height="6.8" rx="1.6" fill="currentColor" />
+      </symbol>
+      <symbol id="i-reply" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12.5 3.2v3.4a2.6 2.6 0 0 1-2.6 2.6H4.2" />
+        <path d="M6.8 6.6 4.2 9.2l2.6 2.6" />
+      </symbol>
+      <symbol id="i-user" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="5.6" r="2.6" />
+        <path d="M3.3 13.2c0-2.3 2.1-3.6 4.7-3.6s4.7 1.3 4.7 3.6" />
+      </symbol>
+      <symbol id="i-terminal" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.2" />
+        <path d="M4.9 6.3 6.9 8.3 4.9 10.3M8.9 10.6h2.6" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2.6 14.6 13.4H1.4z" />
+        <path d="M8 6.6v2.8" />
+        <circle cx="8" cy="11.4" r=".85" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M8 3.4v9.2M3.4 8h9.2" />
+      </symbol>
+      <symbol id="i-history" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.4 8a5.6 5.6 0 1 0 1.7-4" />
+        <path d="M2 2.4v3h3" />
+        <path d="M8 5.2V8l2 1.4" />
+      </symbol>
+    </svg>
 
-    <div id="setup">
-      <label for="token">Paste the token printed by <code>npm start</code>:</label>
-      <input id="token" type="password" autocomplete="off" spellcheck="false" />
-      <button id="save">Save &amp; connect</button>
+    <header>
+      <svg class="mark" aria-hidden="true"><use href="#i-mark" /></svg>
+      <span class="wordmark">Comet<span>Clone</span></span>
+      <span class="conn">
+        <span id="status">starting…</span>
+        <span id="dot"></span>
+      </span>
+      <button id="new" class="square" title="New session — this one is kept in History" aria-label="New session">
+        <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
+      </button>
+    </header>
+
+    <div id="where">
+      <svg id="where-state" class="icon" aria-hidden="true"><use href="#i-dot" /></svg>
+      <span id="where-title" class="idle">no tab attached yet</span>
+      <span id="where-mode">Normal</span>
     </div>
 
-    <details>
-      <summary>Profile</summary>
-      <textarea id="profile" rows="4" spellcheck="false" placeholder="Name: Ada Lovelace
+    <div id="chat" role="log" aria-live="polite">
+      <div id="empty">
+        <p>I can read and act on the page you are looking at: click, type, fill forms, move between tabs.</p>
+        <div class="label">Try</div>
+        <button class="seed">Summarise this page in five bullets</button>
+        <button class="seed">Find the pricing page and compare the tiers in a table</button>
+        <button class="seed">Fill this form with my profile, but stop before submitting</button>
+      </div>
+    </div>
+
+    <div id="step" aria-live="polite"></div>
+
+    <div id="viewing">
+      <span>Viewing an earlier session</span>
+      <button id="to-current">Back to current</button>
+    </div>
+
+    <div id="gate">
+      <div class="head">
+        <svg class="icon" aria-hidden="true"><use href="#i-alert" /></svg>
+        Approval needed
+      </div>
+      <div id="gate-action"></div>
+      <div class="pair">
+        <button id="gate-approve" class="primary">
+          <svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+          Approve
+        </button>
+        <button id="gate-deny">
+          <svg class="icon" aria-hidden="true"><use href="#i-x" /></svg>
+          Deny
+        </button>
+      </div>
+    </div>
+
+    <div class="composer">
+      <textarea id="prompt" rows="2" spellcheck="false"
+        placeholder="Ask it to do something on this page…"></textarea>
+      <div class="controls">
+        <select id="model" title="which CLI answers is picked from the model" aria-label="Model">
+          <!-- A real <legend>, not label="": the label attribute is drawn by the
+               UA and cannot be styled, so the group captions stayed native while
+               everything around them was themed. label stays for the accessible
+               name and for pre-135 Chrome, which ignores the legend. -->
+          <optgroup label="Claude">
+            <legend>Claude</legend>
+            <option value="sonnet">Sonnet</option>
+            <option value="opus">Opus</option>
+          </optgroup>
+          <optgroup label="Cursor">
+            <legend>Cursor</legend>
+            <option value="cursor-grok-4.5-medium">Grok 4.5</option>
+            <option value="composer-2.5">Composer 2.5</option>
+          </optgroup>
+        </select>
+        <select id="mode" title="how much it may do without asking" aria-label="Autonomy">
+          <option value="watch">Watch me</option>
+          <option value="normal" selected>Normal</option>
+          <option value="trust">Trust it</option>
+        </select>
+        <button id="stop" class="square" disabled title="Stop the running task" aria-label="Stop">
+          <svg class="icon" aria-hidden="true"><use href="#i-stop" /></svg>
+        </button>
+        <button id="reply" class="square" disabled title="Reply — ctrl+Enter. Answers the agent, keeping the last run's context" aria-label="Reply">
+          <svg class="icon" aria-hidden="true"><use href="#i-reply" /></svg>
+        </button>
+        <button id="run" class="primary" title="Run — Enter. Starts a fresh task on the tab you are looking at">
+          <svg class="icon" aria-hidden="true"><use href="#i-run" /></svg>
+          Run
+        </button>
+      </div>
+    </div>
+
+    <footer>
+      <details id="history-open">
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>History</summary>
+        <div id="history"></div>
+      </details>
+      <details>
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>Profile</summary>
+        <textarea id="profile" rows="5" spellcheck="false" placeholder="Name: Ada Lovelace
 Email: ada@example.com
 Phone: +1 555 0100
 Location: Remote
 Work authorisation: US citizen"></textarea>
-    </details>
-
-    <textarea id="prompt" rows="2" spellcheck="false"
-      placeholder="go to google.com, search for cats, open the first result"></textarea>
-    <div class="row">
-      <select id="model" title="which CLI answers is picked from the model">
-        <optgroup label="Claude">
-          <option value="sonnet">Sonnet</option>
-          <option value="opus">Opus</option>
-        </optgroup>
-        <optgroup label="Cursor">
-          <option value="cursor-grok-4.5-medium">Grok 4.5</option>
-          <option value="composer-2.5">Composer 2.5</option>
-        </optgroup>
-      </select>
-      <button id="run">Run</button>
-      <button id="reply" disabled title="ctrl+Enter — answer the agent, keeping the last run's context">Reply</button>
-      <button id="stop" disabled>Stop</button>
-      <button id="ping">Ping</button>
-    </div>
-    <div id="gate">
-      <strong>Approval needed</strong>
-      <div id="gate-action"></div>
-      <div class="row">
-        <button id="gate-approve">Approve</button>
-        <button id="gate-deny">Deny</button>
-      </div>
-    </div>
-    <pre id="log"></pre>
+      </details>
+      <details>
+        <summary><svg class="icon" aria-hidden="true"><use href="#i-terminal" /></svg>Log</summary>
+        <pre id="log"></pre>
+      </details>
+    </footer>
 
     <script type="module" src="panel.js"></script>
   </body>

@@ -1,14 +1,74 @@
 # Verifying it by hand
 
-Tasks have a panel UI as of Phase 3 — type one in the box and hit **Run**, watch
-the steps land in the log, **Stop** kills the agent. The `comet` object stays on
-the panel's own devtools console because that is still the only way to reach the
-CDP layer directly.
+Type a task in the box and hit **Run**; **Stop** kills the agent; **Reply**
+(ctrl+Enter) answers it without starting over. The `comet` object stays on the
+panel's own devtools console because that is still the only way to reach the CDP
+layer directly.
+
+## What the panel shows
+
+The transcript is a conversation, not a log. Your task, the agent's answer with
+markdown actually rendered (tables included), and **one collapsed line per tool
+call** — `went to greenhouse.io`, `clicked "Submit application"` — that you open
+when you want the args and the result. A live line under the transcript says what
+it is doing right now; the cost lands as a chip at the end.
+
+The strip under the title bar is **which tab is being driven**, and its state:
+`⏳` running, `✅` done, `❌` failed. Read it before believing an action failed —
+the worst bug this project has had was a form filled perfectly in a tab nobody
+was watching, with every tool returning success.
+
+Everything the bridge sends is still kept verbatim under **Raw log** at the
+bottom, including messages the conversation drops. `comet.log()` returns it as a
+string, which is what to paste into a bug report.
+
+## How much it may do without asking
+
+The dropdown next to the model, and it shows in the strip at all times:
+
+| Mode | What it asks about |
+|---|---|
+| **Watch me** | every action that changes something — click, type, key, select, upload, navigate, tab switches, back/forward. Approving one stops it asking about that kind again for the rest of the task, or it is unusable |
+| **Normal** | only actions whose label reads irreversible — submit, pay, buy, delete, send, book. The default |
+| **Trust it** | nothing. This is the off switch for the only safety feature there is, which is why it stays on screen in red while it is set |
+
+The mode is chosen in the panel, sent with the task, and enforced in the bridge.
+It is never in a prompt and the model never sees it, so nothing the agent says
+can widen its own permissions. An unrecognised mode falls back to **Normal**,
+never to **Trust it**.
+
+Consent walls no longer stop a run: `accept` and `agree` came out of the
+irreversible list, because every "Accept all" cookie banner was halting the task
+for a human — and those dialogs block the page underneath, so the agent burned
+turns on a dialog it could not dismiss without approval.
+
+## Setup (once)
+
+```
+npm install
+npm run setup
+```
+
+Writes a `.vbs` launcher to the Windows Startup folder and prints where. From then
+on the bridge starts at login, invisibly — no console window, no token to paste.
+Re-running `npm run setup` overwrites the `.vbs`; that's expected, not a warning
+sign.
+
+The autostarted bridge is silent by design, so its output goes to
+`.comet-bridge.log` at the repo root — that's the first place to look when
+something isn't working.
+
+`git pull` does not restart the bridge — the old process keeps running on the old
+code until something kills it. Kill `node` in Task Manager, then double-click
+`CometClone.vbs` (Startup folder, or the repo root if Setup fell back there) to
+bring it back, or just log out and in. `CometClone.vbs` is also the manual start:
+double-click it any time instead of running `npm start` in a terminal.
 
 ## The check
 
-`npm start`, reload the CometClone card on `chrome://extensions`, open the side
-panel, right-click inside it → **Inspect**, and paste:
+Reload the CometClone card on `chrome://extensions` (the bridge is already
+running — see Setup above), open the side panel, right-click inside it →
+**Inspect**, and paste:
 
 ```js
 await comet.selftest(); await comet.measure()

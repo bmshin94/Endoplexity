@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { callPanel, askPanel } from "./relay.ts";
-import { check, remember } from "./gate.ts";
+import { check, remember, rememberApproval, resetApprovals, labelFor, type Mode } from "./gate.ts";
 import { keys, resolve } from "./files.ts";
 
 /**
@@ -40,13 +40,40 @@ const full = z
 // exactly the recovery we want — and a denial has to read the same way.
 // Exported for gate.test.ts, which drives it directly rather than standing up
 // a real MCP HTTP round trip just to see the isError shape.
+const MODES = new Set<Mode>(["watch", "normal", "trust"]);
+let mode: Mode | undefined;
+
+/**
+ * The human's autonomy choice for the run about to start. Anything that is not
+ * one of the three known modes becomes undefined, which gate.ts treats as
+ * `normal` — so a garbled message fails closed, never open.
+ *
+ * Clearing the approval memory here rather than from a second call in index.ts
+ * is deliberate: a mode is only ever set at the start of a task, and the memory
+ * is per-task, so they share one lifecycle and cannot be left out of step.
+ */
+export function setMode(next: unknown): void {
+  mode = MODES.has(next as Mode) ? (next as Mode) : undefined;
+  resetApprovals();
+}
+
 export async function relay(name: string, args: Record<string, unknown>) {
-  const needs = check(name, args);
-  if (needs && !(await askPanel(needs))) {
-    return { content: [{ type: "text" as const, text: DENIED }], isError: true };
+  const needs = check(name, args, mode);
+  if (needs) {
+    if (!(await askPanel(needs))) {
+      return { content: [{ type: "text" as const, text: DENIED }], isError: true };
+    }
+    // Watch mode asks about a whole class of action, so approving one has to
+    // stand for the rest of the task or it asks on every keystroke and nobody
+    // uses it twice. gate.ts ignores this in `normal`, where each irreversible
+    // action is meant to be answered on its own.
+    rememberApproval(name, args);
   }
   try {
-    const text = await callPanel(name, args);
+    // The label is what turns "clicked @f0e38" into "clicked Submit
+    // application" in the panel. gate.ts already keeps the ref->label map for
+    // its own policy, so this costs a lookup rather than a round trip.
+    const text = await callPanel(name, args, typeof args.ref === "string" ? labelFor(args.ref) : undefined);
     remember(text);
     return { content: [{ type: "text" as const, text }] };
   } catch (err) {

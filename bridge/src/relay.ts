@@ -59,6 +59,23 @@ export function dropPanel(ws: WebSocket) {
 
 export const panelConnected = () => panel?.readyState === 1;
 
+/**
+ * Send to whichever panel is connected NOW, and say whether it landed.
+ *
+ * startTask used to close over the socket that sent the `task` message, so a
+ * panel that dropped and came back mid-run kept receiving nothing: setPanel()
+ * re-points this file's `panel`, but a captured `ws` stays pointed at the dead
+ * socket forever. Every tool call still worked (those go through callPanel,
+ * which reads `panel`), so the run carried on invisibly and the panel sat there
+ * looking idle until it ended. Resolving the socket at call time is the whole
+ * fix — reconnect logic in the panel is decoration without it.
+ */
+export function sendPanel(payload: Record<string, unknown>): boolean {
+  if (!panelConnected()) return false;
+  panel!.send(JSON.stringify(payload));
+  return true;
+}
+
 /** Resolve the call the panel is answering. Unknown ids are late timeouts. */
 export function settle(msg: { id?: number; ok?: boolean; value?: string; error?: string }) {
   const hit = typeof msg.id === "number" && pending.get(msg.id);
@@ -69,8 +86,16 @@ export function settle(msg: { id?: number; ok?: boolean; value?: string; error?:
   else hit.reject(new Error(msg.error ?? "the panel gave no reason"));
 }
 
-/** Run a tool in the panel and wait for its answer. */
-export function callPanel(name: string, args: Record<string, unknown>): Promise<string> {
+/**
+ * Run a tool in the panel and wait for its answer. `label` is display-only —
+ * the panel renders "clicked Submit application" from it instead of a bare ref
+ * — and is never read back or acted on.
+ */
+export function callPanel(
+  name: string,
+  args: Record<string, unknown>,
+  label?: string,
+): Promise<string> {
   if (!panelConnected()) {
     return Promise.reject(new Error("no side panel connected — open it and check it says connected"));
   }
@@ -81,7 +106,7 @@ export function callPanel(name: string, args: Record<string, unknown>): Promise<
       reject(new Error(`${name} timed out after ${TIMEOUT_MS / 1000}s`));
     }, TIMEOUT_MS);
     pending.set(id, { resolve, reject, timer });
-    panel!.send(JSON.stringify({ type: "tool", id, name, args }));
+    panel!.send(JSON.stringify({ type: "tool", id, name, args, label }));
   });
 }
 
