@@ -1,255 +1,196 @@
 # Endoplexity — phase state
 
-**Goal: replicate Perplexity Comet's browser-control feature**, driven by existing Claude (Pro or Max)
-and Cursor subscriptions instead of metered API keys. Design doc: `docs/specs/design.md`.
-Job-applying is a *test scenario*, never the product — judge features by "does Comet do this
-on any site", not "does this finish the job-form task".
+**Goal: replicate Perplexity Comet's browser-control feature**, driven by existing Claude (Pro or
+Max) and Cursor subscriptions instead of metered API keys. Design doc: `docs/specs/design.md`.
+Job-applying is a *test scenario*, never the product — judge features by "does Comet do this on
+any site", not "does this finish the job-form task".
 
 **Shape:** Chrome side panel (MV3) → local Node bridge → `claude -p` / `cursor-agent -p`.
-The bridge exposes browser tools over MCP; the CLIs are the agent loop. The extension never
+The bridge exposes 14 browser tools over MCP; the CLIs are the agent loop. The extension never
 talks to a model, the CLI never talks to Chrome.
 
 **Run:** `npm install` · `npm run setup` (once — autostarts the bridge at login, no token) ·
 `npm test` · `npm run cursor-login` (once, for the Cursor models — never `cursor-agent login`).
-Then `chrome://extensions` → Load unpacked → `extension/`, open the side panel, type a task,
-hit Run; **Reply** (ctrl+Enter) continues the last conversation. The bridge is invisible, so
-its output is `.endo-bridge.log`; `Endoplexity.vbs` is the manual start. Panel console:
-`endo.selftest("C:\path\to\file.pdf")`, `endo.measure()`, `endo.log()`. Uploads read
+Then `chrome://extensions` → Load unpacked → `extension/`, open the side panel, type a task, hit
+Run; **Reply** (ctrl+Enter) continues the last conversation. The bridge is invisible, so its
+output is `.endo-bridge.log`; `Endoplexity.vbs` is the manual start. Panel console:
+`endo.selftest("C:\path\to\file.pdf")`, `endo.measure()`, `endo.log()`. File keys live in
 `.endo-files.json` (copy `.endo-files.example.json`). See `docs/handrun.md`.
+
+**Reading order:** a fresh session needs only "Next session — start here" below (~70 lines).
+Everything after `## Done` is reference — history, settled decisions, and the gotcha ledger —
+read on demand, not on arrival. The file stays long on purpose: the gotchas each cost a real
+failed run to learn, and trimming them to hit a line count would trade money for tidiness.
+
+---
+
+## Next session — start here
+
+**Everything left in phase 11 is blocked on ONE live run, and it is the same run for both
+features.** They were queued as separate work and they are not: a single task executed once on
+claude and once on cursor, with turns / tokens / cost read off the panel's own chip, produces
+the number feature 2 wants *and* the comparison feature 3 needs. Nothing else can be built from
+a terminal. Do the run first, then decide what code follows.
+
+**The claude baseline moved on 2026-08-10 (`f8cc273`) and no run has used it yet.** P11a fixed a
+P7 defect where claude's briefing preloaded **7 of 13** tools, so scroll/hover/back/forward/
+tabs/use_tab each cost a second ToolSearch round trip — a whole turn, and every turn re-sends
+the ones before it. **Every claude number recorded before that commit is a measurement of the
+defect.** "Kinda ass with claude" may already be partly fixed. Measure before diagnosing, and do
+not start feature 3 by rewriting prompts.
+
+**Read before trusting any number:** Enter is a fresh Run, ctrl+Enter is a Reply. Four
+measurement runs have already died — wrong tab, Reply, laptop sleep, and an agent answering
+from memory without browsing. Confirm `endo: attached to tab N — <url>` in the panel console
+before believing an action failed. Any `↩` in a log voids that run as a measurement.
+
+### The live checklist — one pass discharges five phases' worth of owed verification
+
+None of this is doable from a terminal; all of it is cheap once the extension is loaded.
+
+1. **Load `extension/` unpacked** and confirm Chrome's id is `lblllkbcfcaecfpefighocaefnfkebjj`.
+   A unit test recomputing our own formula cannot catch a disagreement with Chrome. *(P9)*
+2. **`await endo.selftest()` → 27/27.** *(P7/P9)*
+3. **The measurement run itself**, same task on claude and on cursor — record turns, tokens,
+   cost, wall clock for each. *(features 2 and 3)*
+4. **One answer containing a table**, to confirm the P9b markdown path renders live. *(P9b)*
+5. **`read_file` inside a real task** — ask a question whose answer is only in the resume, and
+   read something past 8,000 chars so the `from:` paging path runs for the first time. *(P11a)*
+6. **Close and reopen the side panel mid-task**; events must keep arriving and land in the
+   right session. *(P9/P9c)*
+7. **Theme follows the browser both ways**, composer stays one line at your real width. *(P9b)*
+8. **C8, the Cursor checklist** on `composer-2.5` and `cursor-grok-4.5-medium` — the only thing
+   that retires "never really tried it with cursor". *(P5/P9)*
+9. **A cookie-walled page does not stop the run.** *(P9)*
+
+### Phase 11 — the two features left
+
+1. ~~File input the agent can READ~~ — **done, P11a.**
+2. **Token efficiency, second pass.** The user's words are "this is too consuming". P3 measured
+   the 5-tool world; the bill now carries a 14-tool schema (~1,829 tokens at 13, `read_file`
+   adds ~180) plus `full:` returns. Known levers if the number justifies them: dead OOPIF
+   sessions still costing a failed round trip and a noise line each, stale-ref recovery costing
+   a whole page, and `full:` on a redirect wall being paid before you learn the page was wrong.
+3. **The claude path brought up to the cursor path's quality.** "Kinda ass with claude, really
+   good with cursor" is the standing verdict and has never been diagnosed — C8 was written to
+   test cursor. Find out *what* is worse (turns? tool adoption? fake-XML retries? the deferred-
+   MCP-tools hypothesis?) before touching anything, **and re-measure post-`f8cc273` first.**
+
+### Parked launch chores (P10) — each needs a browser, a camera, or a decision only you can make
+
+- **Create the GitHub repo and push.** Assumed URL `github.com/Endokelp/endoplexity`, written
+  into `README.md` and the LinkedIn draft — if the real one differs, both change. First push is
+  the moment to confirm no `.endo-token` / `.endo-files.json` / `.endo-mcp.json` rode along.
+- **Record the demo.** Shot list in `docs/launch.md`. The gate frame at 16–21s is the one that
+  answers "you let an AI click submit?".
+- **Post it.** Draft written, needs a real link.
+- **Decide the copyright name.** `NOTICE` says "Endokelp" — the git identity, not necessarily
+  the name wanted on a legal notice.
+
+### Still queued, unscheduled
+
+Dead OOPIF sessions; cheaper stale-ref recovery than a whole page; the profile field's
+job-shaped costume; `@`-mentioning a tab as context (Comet has it; our fresh-Run re-attach
+covers the failure that actually bit us); Chrome tab groups (rejected for now — Claude's version
+drew four bug reports for groups that multiply and never clean up).
+
+---
 
 ## Done
 
 - **P0–P2 — handshake, CDP tool layer, MCP relay.** Loopback WS gated on extension origin AND
-  timing-safe token (401/401/401/101); flat auto-attach, one CDP session per OOPIF,
-  generation-based stale refs; `/mcp` over that same socket; a google search+open ran unattended.
-- **P3 — token efficiency.** Snapshots default to actionable + headings; actions return the
-  page they produced. **Baseline: one google run at $0.0984 / 111,872 tokens / 9 turns.**
-  Prose-cutting alone was **1.5x, not 2x** — the surviving actionable lines are the long ones.
+  timing-safe token; flat auto-attach, one CDP session per OOPIF, generation-based stale refs;
+  `/mcp` over that same socket.
+- **P3 — token efficiency.** Snapshots default to actionable + headings; actions return the page
+  they produced. **Baseline: one google run at $0.0984 / 111,872 tokens / 9 turns.** Prose-
+  cutting alone was **1.5x, not 2x** — the surviving actionable lines are the long ones.
 - **P4 — approval gate.** `gate.ts` is the policy, `relay()` the single chokepoint. 60s silence,
   no panel, or a panel dropping mid-gate all deny. Approve and deny both verified live.
 - **P5 — Cursor adapter + model picker**, end to end on `composer-2.5` and
   `cursor-grok-4.5-medium`; shell denied, `apiKeySource: "login"`.
-- **Session continuity.** The bridge `--resume`s the CLI session id; the panel gains **Reply**,
-  live only when the last run left a transcript. Verified by codeword recall across spawns.
-- **Page context.** The panel names the current page in every task prompt, through the same
-  picker `attach()` uses. Without it "apply to *this* job" was unanswerable — the agent asked
-  for a URL and exited at 1 turn. Necessary but NOT sufficient: see the different-tab gotcha.
-- **P6 — v1, agent-driven form fill (closed 2026-08-06).** `upload` takes a configured KEY and
-  scans every frame's DOM for `input[type=file]` because real ATS forms hide it; `select`
-  drives a native `<select>`; `key: Enter` is gated on irreversible-labelled controls; stale
-  refs return the fresh page so recovery costs no turn. By curl on the real Cloudflare
-  Greenhouse form, `upload` found **both** hidden inputs and **the gate intercepted a real
-  "Submit application" click**. After the page-context fix **the agent drove that form
-  unaided** — first agent-driven completion, user-confirmed. **Rescoped** from "3 real job
-  sites": job-applying is the test case, not the product. **Not measured:** turns, cost, or
-  whether stale-ref recovery and the combobox path fired — the ATS gotchas below are still
-  unproven agent-driven.
+- **Session continuity + page context.** The bridge `--resume`s the CLI session id; the panel
+  gains **Reply**, live only when the last run left a transcript. The panel names the current
+  page in every task prompt — without it "apply to *this* job" was unanswerable. Necessary but
+  NOT sufficient: see the different-tab gotcha.
+- **P6 — v1, agent-driven form fill (2026-08-06).** `upload` takes a configured KEY and scans
+  every frame's DOM for `input[type=file]` because real ATS forms hide it; `select` drives a
+  native `<select>`; `key: Enter` is gated on irreversible-labelled controls; stale refs return
+  the fresh page so recovery costs no turn. On the real Cloudflare Greenhouse form `upload`
+  found **both** hidden inputs and **the gate intercepted a real "Submit application" click**;
+  after the page-context fix **the agent drove that form unaided**. **Rescoped** from "3 real
+  job sites": job-applying is the test case, not the product.
+- **P7 — reachability, 7 tools → 13 (2026-08-06).** `scroll` (a real `mouseWheel`), `hover`,
+  `back`/`forward` (`Page.getNavigationHistory` + `navigateToHistoryEntry`), `tabs`/`use_tab`,
+  and `snapshot from:`. Verified live 27/27. Corrected its own premise: the AX tree is the whole
+  document, so below the fold was never unreachable. **Left a defect P11a found and fixed** —
+  the claude briefing kept preloading only the original 7.
+- **P8 — multi-tab research (2026-08-09, deliverable NOT met).** Shipped `full` on
+  `navigate`/`use_tab` (~87 tokens/turn), a fresh Run re-attaching to the active tab, and
+  Enter/ctrl+Enter swapped. **P7's inherited cost gate IS discharged** — a real Cloudflare
+  Greenhouse application, agent-driven: **$0.0959 / 112,064 tokens / 10 turns / 42s** against
+  P3's **$0.0984 / 111,872 / 9 turns**. Flat, while paying ~18k of tool schema the baseline
+  never did, so 5 → 13 tools cost nothing. **The research number was never obtained** — four
+  attempts died four different ways. Proved on the way: `full:` is adopted unprompted, stale-ref
+  recovery works and costs a whole page each time, and redirect walls make `full:` expensive.
+- **P9 — refinement (2026-08-09).** Scoped from the four things that made it unshowable.
+  **No terminal, no token:** `npm run setup` writes a Startup-folder `.vbs`; the extension id is
+  pinned by an RSA `key` in the manifest and the WS upgrade is gated on that exact origin. An
+  HTTP `/pair` was built first and **deleted** — Chrome sends no Origin on an extension
+  `fetch()`, so it refused its own panel. **A conversation, not a log:** `md.js` + `transcript.js`
+  — markdown, one collapsed `<details>` per tool call, cost as a chip; tool rows come from
+  `answer()`, which **deleted** both CLIs' tool-parsing branches. **Robustness:** `sendPanel()`
+  resolves the socket at call time, `hello` restores state on reconnect, backoff + 20s heartbeat,
+  15s orphan grace kill. **Three autonomy modes** (`watch`/`normal`/`trust`) enforced in the
+  bridge, never in a prompt. 54 → 78 tests.
+- **P9b — the panel redesigned from zero (2026-08-10).** Opened by the verdict "grok-4.5 works,
+  the panel is holding it back" — flooded with tool usage, formatting not showing. `PRODUCT.md` +
+  `DESIGN.md` hold the design context. **Instrument, not editorial:** one sans family, OKLCH
+  neutrals at hue 150, three colour roles only (green live/primary, ochre needs-you, red
+  danger). **The trace recedes** through size, weight and position — not lighter grey, which
+  would have failed AA. **Formatting the model actually meant:** h1–h6, `__bold__`, `~~strike~~`,
+  nested lists, task checkboxes, and **equations** via `math.js` → native MathML (KaTeX rejected:
+  ~280KB vendored under a CSP forbidding external hosts). One inline SVG sprite. Themed
+  `appearance: base-select` dropdowns. 78 → 96 tests.
+- **P9c — sessions that survive (2026-08-10).** `transcript.js` journals every rendered entry as
+  plain data and can `restore()` it; `sessions.js` (DOM-free) holds the list, newest first, 20 ×
+  400 entries × 2,000 chars/field; `panel.js` mirrors to `chrome.storage.local` on a 400ms
+  debounce. `+` archives the live session, a History sheet reads any back. Falls out for free:
+  Chrome tears the panel down on every window switch, so **the transcript no longer vanishes
+  when you look at another window** — that was the everyday bug, not the headline. 96 → 106
+  tests. **The storage cap is a guess:** nobody has weighed a real 10-turn `full:` run against
+  the 10MB quota.
+- **P10 — rebrand to Endoplexity, launch-ready (2026-08-10).** `CometClone` named a competitor's
+  product with "Clone" attached. Renamed case-sensitively so genuine "Perplexity Comet"
+  references survive: brand, `globalThis.endo`, the `endo:` CDP log prefix, and **MCP server
+  `comet` → `endo`** (model-facing, but pinned by claude.test.ts and cursor.test.ts). Runtime
+  dotfiles were **renamed on disk rather than regenerated**, so the token, the file map and
+  `~/.endo-cursor`'s Cursor login all survived. `LICENSE` is **Apache-2.0**, fetched verbatim —
+  chosen over MIT for its §6 no-trademark clause and fuller liability disclaimer, which is what
+  matters for software that can click "Submit". `NOTICE` carries the non-affiliation statement,
+  which does more protective work than the licence choice. New `README.md` and `docs/launch.md`.
+- **P11a — the agent can READ a file, 13 tools → 14 (2026-08-10, `f8cc273`).** First of phase
+  11's three, picked as the only one not blocked on a live run. `read_file` takes a configured
+  KEY through the same `files.ts` `resolve()` `upload` uses, so the model still never sees a
+  path, and it **skips `relay()` and the gate** — it never touches Chrome, and reading a file the
+  human allow-listed is not irreversible. `docs.ts` is DOM-free and dependency-free except for
+  the one place a dependency was right: **pdf**. docx/xlsx/pptx are zips of XML, so a ~35-line
+  central-directory walk plus `node:zlib` covers them; `unpdf` (**zero transitive deps**,
+  imported lazily so a run that reads nothing pays no startup) does PDF. Anything else is
+  **sniffed, not extension-matched** — every source file, `.csv`, `.ini` reads as text without a
+  language list; images and the old `.doc`/`.xls` binaries refuse with a message naming the fix.
+  Excel dates resolve through `styles.xml` rather than staying serial numbers, and empty cells
+  keep their column — both are facts the agent would otherwise state wrongly. Returns cap at
+  8,000 chars and page with `from:`. **Verified over `/mcp`:** 14 tools list; a real call on the
+  configured resume returned 4,891 chars, `isError=false`, `from: 10` → 4,881; a bogus key
+  returns a readable `isError`. **106 → 130 tests.**
+  - **Accepted, deliberate widening:** the agent can now read a configured file's *contents* and
+    could type them into a page. `upload` never exposed content. The allow-list is still the
+    whole boundary and this is the point of the feature — but it is a real change in what a
+    confused run can leak, not a regression to be "fixed" later.
+  - **The 8,000-char cap is arithmetic, not measurement** (~2k tokens), and the resume that
+    motivated the feature came in at 4,891 — so the paging path has never run on a real document.
 
-- **P7 — reachability, 7 tools → 13 (closed 2026-08-06).** `scroll` (a real `mouseWheel`, so
-  lazy content loads and an open flyout scrolls instead of the page behind it; optional ref
-  scopes it), `hover` (`mouseMoved` at `centreOf`), `back`/`forward` (`Page.getNavigationHistory`
-  + `navigateToHistoryEntry`), `tabs`/`use_tab` (list with the attached one starred, then
-  switch by id or open a url), and `snapshot from:` — `serialize()` builds every line then
-  slices, so the 300-line cap finally has a cursor. **Verified live: `selftest()` 27/27, 1
-  skipped**, plus `npm test` 54/54 and all 13 tools listing over `/mcp` at HTTP 200. A form
-  fill also ran agent-driven on the new tool layer, so P6's path still holds. **Closed
-  without the cost number** — the gate below moved to P8 rather than blocking the phase.
-  Corrected the phase's own premise on the way: the AX tree is the whole document, so below
-  the fold was never unreachable.
-
-- **P8 — multi-tab research (closed 2026-08-09, deliverable NOT met).** Shipped `full` on
-  `navigate`/`use_tab` (~87 tokens/turn; all 13 tools ~1,829), a fresh Run re-attaching to the
-  active tab, and Enter/ctrl+Enter swapped. **P7's inherited gate IS discharged** — a real
-  Cloudflare Greenhouse application, agent-driven: **$0.0959 / 112,064 tokens / 10 turns /
-  42s** against P3's **$0.0984 / 111,872 / 9 turns**. Flat, while paying ~18k of tool schema
-  the baseline never did, so 5 → 13 tools cost nothing. **The research number was never
-  obtained** — four attempts died four different ways: wrong tab, Reply, laptop sleep, and
-  finally the agent answering from memory without browsing at all. Proved live on the way:
-  `full:` is adopted unprompted, stale-ref recovery works (and costs a whole page each time),
-  and redirect walls make `full:` expensive — you only learn a page was wrong after paying
-  to read it.
-
-- **P9 — refinement (code landed 2026-08-09, live verification OWED).** Scoped from the four
-  things that made it unshowable: startup, unreadable output, robustness, an unexercised
-  Cursor path. Design target researched **first-party rather than from memory** — Perplexity's
-  three stated principles (**transparency, user control, sound judgment**), Claude for Chrome's
-  three-mode `PermissionManager`, Gemini's chronological action list. Shipped:
-  - **No terminal, no token.** `npm run setup` writes a Startup-folder `.vbs`. The extension
-    id is pinned by an RSA `key` in the manifest (`lblllkbcfcaecfpefighocaefnfkebjj`,
-    confirmed against Chrome) and the WS upgrade is gated on that exact origin — no token on
-    the panel path at all. An HTTP `/pair` was built first and **deleted**: Chrome sends no
-    Origin on an extension `fetch()`, so it refused its own panel. Verified by curl: upgrade
-    401 for no origin / another extension / a website, **101** for ours; `/mcp` still
-    401/401/401/200 with 13 tools.
-  - **A conversation, not a log.** `md.js` (pure testable `parse`, `createElement`-only
-    `toDom`) + `transcript.js`: markdown with tables, one collapsed `<details>` per tool call,
-    a live step line, cost as a chip. Tool rows now come from `answer()` — the bridge already
-    sends name+args — which **deleted** both claude's `tool_use` parsing and cursor's
-    `tool_call` branch.
-  - **Robustness.** `sendPanel()` resolves the socket at call time (gotcha below), `hello`
-    restores running/resumable on reconnect, backoff + 20s heartbeat, 15s orphan grace kill.
-  - **Three autonomy modes** (`watch`/`normal`/`trust`) chosen in the panel, enforced in the
-    bridge, never in a prompt; `watch` remembers an approval for the rest of the task or it is
-    unusable. **Deliberately reopened the locked auto-run decision, at user request.**
-  - `accept`/`agree` out of `IRREVERSIBLE`; an unknown model now fails instead of silently
-    running Sonnet; `EADDRINUSE` prints a sentence. **78/78 tests**, was 54.
-
-- **P9b — the panel redesigned from zero (code landed 2026-08-10, live verification OWED).**
-  The verdict that opened it: grok-4.5 works, and the panel was the thing holding it back —
-  "flooded with tool usage", and formatting "not showing". Both were real and both are fixed.
-  Design context now lives in `PRODUCT.md` + `DESIGN.md` at the root (written this session, via
-  the impeccable skill). Register **product**, colour strategy **restrained**, theme **follows
-  the browser and is never white**. Shipped:
-  - **Instrument, not editorial.** The warm-cream-plus-serif answer was the second-order
-    category reflex and read as costume. One sans family, OKLCH neutrals tinted to hue 150,
-    hairline rules, tabular numerals. Three colour roles and no others: green = live/primary/
-    success, ochre = needs-you, red = danger. Claude-amber, Perplexity-teal and Linear-violet
-    were all rejected as the category's reflex palettes.
-  - **The trace recedes.** 11.5px, `--text-soft`, one sentence, folded, behind a single
-    unbroken rail (a `.trace` wrapper, not a per-row border). Only the dot and the word
-    "failed" carry colour. It recedes through size, weight and position — **not** through
-    lighter grey, which would have bought the same look by failing AA.
-  - **Formatting the model actually meant.** h1–h6 (was h1–h3, and a `####` used to eat the
-    following line), `__bold__`, `~~strike~~`, nested lists by indent, task checkboxes, and
-    **equations**: `math.js` is a LaTeX subset → **native MathML**, no library. KaTeX was
-    rejected — ~280KB vendored under a CSP that forbids any external host, for a minority of
-    answers. Verified rendering a real quadratic and `\left(…\right)^2`.
-  - **Proper icons.** One inline SVG sprite, 16px grid, 1.5px stroke, `currentColor`, `<use>`.
-    The text glyphs `○ ● ✓ ✕` are gone.
-  - **The dropdowns are ours now.** `appearance: base-select` (Chrome 135+, we are on 151) —
-    the OS-drawn white sheet with the blue highlight is replaced by a themed picker that fades
-    and lifts on open, with hover rows, a rotating chevron and a green tick. Still a real
-    `<select>`, so keyboard and a11y are free and `panel.js` still just reads `.value`.
-    Secondary controls became ghosts; only Run stays filled.
-  - **78 → 96 tests** (`math.test.ts` is new; `parseMath` is DOM-free for exactly that reason).
-
-- **P9c — sessions that survive (code landed 2026-08-10, live verification OWED).** First of the
-  four queued features, picked as the cheapest: panel-side plus one line in the bridge, no
-  measurement run and no new dependency. `transcript.js` now journals every rendered entry as
-  plain data and can `restore()` it, `sessions.js` (DOM-free, so testable) holds the list —
-  newest first, `sessions[0]` live, 20 sessions × 400 entries × 2,000 chars per field — and
-  `panel.js` mirrors it into `chrome.storage.local` on a 400ms debounce. **A `+` in the header
-  archives the live session; a History sheet in the footer reads any of them back.** Falls out
-  for free: Chrome tears the side panel down on every window switch, so **the transcript no
-  longer vanishes when you look at another window** — that was the everyday bug, not the
-  headline feature. Reply is off while reading history, New is off while a task runs, and Run
-  snaps back to live first. **96 → 106 tests**; the DOM half was checked in headless Chrome
-  (17 assertions, both themes, footer one row at 360px *and* 320px).
-
-- **P10 — rebrand to Endoplexity, and made launch-ready (2026-08-10).** `CometClone` names a
-  competitor's product with "Clone" attached, which is a bad public repo and trademark-adjacent;
-  the user chose **Endoplexity**. Renamed case-sensitively so genuine "Perplexity Comet"
-  references survive: brand, `globalThis.endo` console API, the `endo:` CDP log prefix, and the
-  **MCP server `comet` → `endo`** (so `mcp__endo__*`, `Mcp(endo:*)`) — model-facing, but pinned
-  by claude.test.ts and cursor.test.ts, so drift cannot go silent, and one char shorter per tool
-  name than before. Runtime dotfiles went `.comet-*` → `.endo-*` and were **renamed on disk
-  rather than regenerated**, so the token, the file map and `~/.endo-cursor`'s Cursor login all
-  survived; no migration shim ships in the repo for a rename with one user. `LICENSE` is
-  **Apache-2.0**, fetched verbatim (11,358 bytes) rather than written from memory — chosen over
-  MIT for its §6 no-trademark-licence clause and its fuller liability disclaimer, which is the
-  part that matters for software that can click "Submit". `NOTICE` carries the non-affiliation
-  statement, which does more protective work than the licence choice does. New: `README.md`
-  (architecture, safety model, the measured cost, honest known-gaps), `docs/launch.md` (the
-  LinkedIn post, a demo shot list, a repo-settings checklist). **106/106 tests still pass**, and
-  the old `CometClone.vbs` was deleted from the Startup folder so login does not fire two bridges.
-
-- **P11a — the agent can READ a file, 13 tools → 14 (code landed 2026-08-10, live verification
-  OWED).** First of phase 11's three, picked because it was the only one not blocked on a live
-  run. `read_file` takes a configured KEY through the same `files.ts` `resolve()` `upload` uses,
-  so the model still never sees a path, and it does **not** go through `relay()`/the gate — it
-  never touches Chrome, and reading a file the human allow-listed is not irreversible.
-  `docs.ts` is DOM-free and dependency-free except for the one place a dependency was the right
-  call: **pdf**. docx/xlsx/pptx are zips of XML, so a ~35-line central-directory walk plus
-  `node:zlib` covers them; PDF text extraction is a real parser and `unpdf` (**zero transitive
-  deps**, imported lazily so a run that reads nothing pays no startup) does it. Anything else
-  is **sniffed, not extension-matched** — every source file, .csv, .env, .ini reads as text
-  without this module learning a language list; images and the old `.doc`/`.xls` binaries are
-  refused with a message naming the fix. Returns cap at 8,000 chars and page with `from:`,
-  same reasoning as `snapshot`'s line cap. **Verified end to end over `/mcp`**: 14 tools list,
-  and a real call on the configured resume returned 4,891 chars, `isError=false`, `from: 10`
-  returning 4,881; a bogus key returns a readable `isError`. **106 → 126 tests.**
-  - **Fixed on the way, a real P7 defect:** claude's briefing told it to load "every browser
-    tool" in one ToolSearch call and then named **7 of 13** — scroll, hover, back, forward,
-    tabs and use_tab each cost a second round trip, which is a whole turn, and every turn
-    re-sends the ones before it. Now built from an exported `PRELOAD` list, and
-    `claude.test.ts` pins it against mcp.ts's own `registerTool` calls so it cannot drift
-    again. **This changes claude's per-run cost and is a live candidate for feature 3's
-    "kinda ass with claude" verdict** — do not diagnose that without accounting for it.
-  - **Accepted, deliberate widening:** the agent can now read a configured file's *contents*
-    and could type them into a page. `upload` never exposed content. The allow-list is still
-    the whole boundary and that is the point of the feature — but it is a real change in what
-    a compromised or confused run can leak, and it is not a regression to be "fixed" later.
-
-## Current phase: 11 — two features left
-
-**Start here in a fresh session.** P10 (launch) ran early by accident — it was meant to be a
-future phase — and its terminal-side work is done and committed, so the remaining launch items
-are parked below as chores, not as a phase. These three are the actual work, in the order they
-should probably be taken:
-
-1. ~~File input the agent can READ~~ — **done, see P11a above.**
-2. **Token efficiency, second pass.** The user's words are "this is too consuming". P3 measured
-   the 5-tool world; the bill now carries the 13-tool schema (~1,829 tokens) and `full:`
-   returns. Needs a live measurement run to mean anything — and four of those have died in a
-   row (wrong tab, Reply, laptop sleep, an agent answering from memory), so **read the Enter/
-   ctrl+Enter gotcha before trusting any number**.
-3. **The claude path brought up to the cursor path's quality.** "Kinda ass with claude, really
-   good with cursor" is the standing verdict and it has never been diagnosed — C8 was written
-   to test cursor. This one is blocked on a live run before any code: find out *what* is worse
-   (turns? tool adoption? fake-XML retries? the ToolSearch deferral?) before fixing anything.
-
-**Parked launch chores (P10), all needing a browser, a camera, or a decision only the user can
-make:**
-
-- **Create the GitHub repo and push.** Assumed URL `github.com/Endokelp/endoplexity` — it is
-  written into `README.md` and the LinkedIn draft, so if the real one differs, both change.
-  `docs/launch.md` has the repo-settings checklist; the first push is the moment to confirm no
-  `.endo-token` / `.endo-files.json` / `.endo-mcp.json` rode along.
-- **Record the demo.** Shot list is in `docs/launch.md`; the recording itself cannot be produced
-  from here. The gate frame at 16–21s is the one that answers "you let an AI click submit?".
-- **Post it.** Draft is written and needs a real link before it goes out.
-- **Decide the copyright name.** `NOTICE` says "Endokelp" — the git identity, not necessarily
-  the name wanted on a legal notice.
-
-**Still owed from phase 9 — all live, none of it doable from a terminal:** load `extension/`
-unpacked and confirm Chrome's id equals `lblllkbcfcaecfpefighocaefnfkebjj` (a unit test
-recomputing our own formula cannot catch a disagreement with Chrome); `await endo.selftest()`
-back to 27/27; one real task whose answer contains a table; close and reopen the side panel
-mid-task and confirm events keep arriving; a cookie-walled page not stopping; and **C8, the
-Cursor checklist** on both `composer-2.5` and `cursor-grok-4.5-medium` — the only thing that
-retires "never really tried it with cursor".
-
-**Owed for P9b specifically:** the redesign was verified in headless Chrome against a
-synthesised transcript, at 360px and 320px, in both themes — real layout, real MathML, no
-horizontal overflow. That is not the same as a real run: **reload the unpacked extension** and
-confirm the theme follows the browser both ways, the composer stays on one line at the width
-you actually use, and a real agent answer containing a table renders. `scripts/` has no preview
-harness; it was scratch, and rebuilding it is a 90-line http server plus a swapped `<script>`.
-
-**Owed from P8, still owed:** the research cost number, and whether C0's one-line briefing
-clause ("never answer from memory") actually fixes the zero-tool research answer. If it does
-not, the deferred-MCP-tools hypothesis survives and earns real budget.
-
-The four the user queued on 2026-08-10, after the run where "grok 4.5 works like butter":
-sessions + history (**P9c**), file input the agent understands (**P11a**), and the two above.
-
-**Owed for P11a:** everything live. `read_file` has never run inside a real task — only over
-`/mcp` directly. Worth one run that reads the resume and answers a question about it, and one
-that pages a document past 8,000 chars. The **cap is a guess**, exactly like P9c's storage cap:
-8,000 chars is ~2k tokens by arithmetic, not by measurement, and the resume that motivated the
-feature came in at 4,891 so the paging path has never been exercised on a real document.
-
-**Owed for P9c:** the storage cap is a guess, not a measurement — pack() clips a field at
-2,000 chars and keeps 400 entries, but nobody has watched what a real 10-turn run with `full:`
-snapshots actually weighs against the 10MB quota. Also unverified live: that a task running
-while the panel is closed and reopened lands its events in the right session.
-
-**Still queued:** dead OOPIF sessions; cheaper stale-ref recovery than a whole page; the
-profile field's job-shaped costume; `@`-mentioning a tab as context (Comet has it, our
-fresh-Run re-attach covers the failure that actually bit us); Chrome tab groups (rejected for
-now — Claude's version drew four bug reports for groups that multiply and never clean up);
-and a compression pass on this file, now well over the 150-line cap. **README/LICENSE landed
-in P10;** the demo recording is the only launch asset still outstanding.
+---
 
 ## Decisions locked
 
@@ -270,6 +211,12 @@ in P10;** the demo recording is the only launch asset still outstanding.
 - **The two tools that ARRIVE somewhere (`navigate`, `use_tab`) also take `full`**, so a
   reading task gets the prose with the page. Acting tools deliberately do not: mid-form, body
   text is dead weight that every later turn re-sends
+- **`read_file` is not gated and does not relay.** It never touches Chrome, so there is no page
+  to return and nothing for the gate to weigh; `files.ts`'s allow-list is the whole boundary,
+  the same one `upload` goes through
+- **Document returns are capped and paged, like snapshots.** A tool return crosses the model's
+  context on every LATER turn too, so one 40k-character spreadsheet is paid ten times over a
+  ten-turn task
 - **A fresh Run re-attaches to the active tab; a Reply never does.** "This page" can only mean
   the one you are looking at when you press Run, and a fresh Run holds no refs and no
   transcript, so re-binding is free. Mid-conversation it would destroy refs the agent is using
@@ -298,11 +245,15 @@ in P10;** the demo recording is the only launch asset still outstanding.
 ## Gotchas
 
 - **Never rotate `.endo-token` or `.endo-files.json` without asking.**
+- **claude's `PRELOAD` list and mcp.ts's `registerTool` calls are two hand-written lists that
+  must agree.** P7 took the tool count 7 → 13 and left the briefing at 7, so six tools each cost
+  an extra ToolSearch round trip — a whole turn — for two phases and every measurement in them.
+  `claude.test.ts` now pins one against the other by reading mcp.ts's source. **Adding a tool
+  means adding it to `PRELOAD`.**
 - **Dropping the bridge's session id has to survive a disconnected socket.** New Session sends
   `new-session`, but with the panel disconnected there is nothing to send it to — and the
   bridge still holds the id, so its next `hello` said `resumable: true` and lit Reply back up
-  on the session that was just archived. That is the cross-conversation bug the Enter/Reply
-  swap already cost two measurements to. `dropBridgeSession()` latches and re-sends on the next
+  on the session that was just archived. `dropBridgeSession()` latches and re-sends on the next
   hello, and that hello's own `resumable` is ignored because it describes the pre-drop state.
 - **The empty state is hidden, never removed.** Its seed buttons are wired once at load, so a
   removed node takes its listeners with it and New Session brings back dead buttons. Caught in
@@ -371,15 +322,14 @@ in P10;** the demo recording is the only launch asset still outstanding.
   behind it. Don't re-derive this from the symptom.
 - **A truncation or error message must only name a recovery the agent can perform.** The old
   cap notice said "scroll or narrow the page" — it could do neither. It now names the literal
-  next call, `snapshot with from: N`.
+  next call, `snapshot with from: N`; `read_file`'s paging notice follows the same rule.
 - **A tab Chrome has just created reports `url: ""`** and carries the real one in
   `pendingUrl` until the navigation commits — reading `.url` there rejects every new tab as
   undrivable. `useTab` checks the url string it was handed instead.
 - **A tab's first navigation away from the initial empty document REPLACES that entry**
   rather than pushing one, so a history built through `about:blank` can have nothing to go
   back to. `pickTab()` opens tabs at `about:blank`, so this bites here specifically — the
-  self-test's back/forward check moves between two served pages instead. Likely cause of the
-  first live failure, not isolated: the CDP rewrite below landed in the same change.
+  self-test's back/forward check moves between two served pages instead.
 - **`chrome.tabs.goBack` reports "Cannot find a next page in history." for going BACK too** —
   Chromium reuses one string for both directions — and the API takes no argument, so the
   failure names nothing. `go()` reads `Page.getNavigationHistory` and drives
@@ -408,6 +358,9 @@ in P10;** the demo recording is the only launch asset still outstanding.
   file landed. The return line says "succeeded" first for exactly this reason.
 - **The fake-`<function_calls>` retry only looked at the `result` event** and so never fired on
   a run whose final message was clean. Now latched across all events. ~$0.06 a miss.
+- **A committed binary fixture needs `.gitattributes`.** `hello.pdf` stores byte offsets in its
+  xref table, and git's default LF → CRLF on Windows shifts every one of them and the file stops
+  parsing. `*.pdf binary` — caught at `git add`, when the diff said "33 lines" instead of "Bin".
 - Auto-attach also hands you **workers and service workers** — register `type === "iframe"`.
   Pin the ref generation for a whole snapshot, or early frames read stale and later ones don't.
   Only one debugger per tab: the tab under test must not have devtools open.
@@ -420,6 +373,8 @@ in P10;** the demo recording is the only launch asset still outstanding.
   Rendering must never throw on page data: no AX field is a guaranteed string.
 - Running a second bridge to smoke-test rewrites **both** `.endo-mcp.json` and
   `~/.endo-cursor/home/.cursor/mcp.json` to that port. Back both up, or restart the real one.
+  **Importing `mcp.ts` alone does not** — only `index.ts` writes those files, which is what
+  makes a tools/list smoke test safe to run against a live bridge.
 - Greenhouse runs an **invisible reCAPTCHA enterprise** iframe — expect it on real submits.
 - Cursor's model ids are not the design doc's: `cursor-grok-4.5-{low,medium,high}`, each with a
   `-fast` twin; `--list-models` needs login and is the source of truth. Its stream-json is
@@ -430,27 +385,28 @@ in P10;** the demo recording is the only launch asset still outstanding.
 
 ## Security invariants (do not regress)
 
-- Bind `127.0.0.1` only. **The WS upgrade is gated on the origin alone now — the token is
-  gone from that path, reversing the old "both origin AND token" invariant.** The origin is an
-  **exact match** against the id derived from the RSA `key` in `extension/manifest.json`
-  (`auth.ts` derives it from the manifest at load, never hardcoded, so the two cannot drift
-  into "nothing connects"). The token only ever backed up a *weak* check —
-  `startsWith("chrome-extension://")`, which every extension satisfied. Against one pinned id
-  it adds nothing, because the panel is a browser page: its only way to *receive* a token is
-  over a channel gated by that same origin, so anyone who can forge the origin collects the
-  token first. A token the client fetches for itself is theatre. **The token is still the
-  whole boundary on `/mcp`**, where it is load-bearing because a CLI sends no Origin
+- Bind `127.0.0.1` only. **The WS upgrade is gated on the origin alone — the token is gone from
+  that path**, reversing the old "both origin AND token" invariant. The origin is an **exact
+  match** against the id derived from the RSA `key` in `extension/manifest.json` (`auth.ts`
+  derives it from the manifest at load, never hardcoded, so the two cannot drift into "nothing
+  connects"). The token only ever backed up a *weak* check — `startsWith("chrome-extension://")`,
+  which every extension satisfied. Against one pinned id it adds nothing, because the panel is a
+  browser page: its only way to *receive* a token is over a channel gated by that same origin.
+  **The token is still the whole boundary on `/mcp`**, where it is load-bearing because a CLI
+  sends no Origin
 - **Do not re-add an HTTP pairing endpoint.** Measured 2026-08-09: Chrome sends **no `Origin`
-  header at all** on `fetch()` from an extension page when the extension holds host
-  permissions — the request is privileged rather than CORS — so `/pair` refused its own panel
-  (`refused /pair from origin=(none)`). The **WebSocket upgrade does** carry a real Origin, and
-  page script cannot set one. That asymmetry is why the identity check lives on the socket
+  header at all** on `fetch()` from an extension page when the extension holds host permissions
+  — the request is privileged rather than CORS — so `/pair` refused its own panel. The
+  **WebSocket upgrade does** carry a real Origin, and page script cannot set one. That asymmetry
+  is why the identity check lives on the socket
 - **The autonomy mode is transported with the task and enforced in the bridge**, never in a
   prompt, and the model never sees it. An absent or unrecognised mode is `normal`, never
   `trust` — it fails closed. `trust` disables the gate entirely, so the panel keeps it on
   screen in red the whole time it is set
-- **`upload` resolves a key, never a model-supplied path** — `files.ts` rejects relative paths
-  and unknown keys; the model never sees a filesystem path at all
+- **`upload` and `read_file` resolve a key, never a model-supplied path** — `files.ts` rejects
+  relative paths and unknown keys; the model never sees a filesystem path at all. `read_file`
+  additionally exposes file *contents* to the model, which `upload` did not — a deliberate,
+  recorded widening (P11a), bounded by the same human-edited allow-list
 - **`--resume` restores a conversation, not a permission set.** Every restriction flag is
   passed again on a resumed spawn. Verified 2026-08-04 by reading a resumed run's init event —
   `ToolSearch` + `mcp__endo__*` and nothing else — not by reading docs
