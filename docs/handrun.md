@@ -144,15 +144,13 @@ paying for it by default.
 
 ## Applying with a resume
 
-The panel has a collapsed **Profile** section above the task box — paste name,
-email, phone, location, work authorisation, whatever the forms keep asking for.
-It's stored in `chrome.storage.local`, so it survives reloads, and gets appended
-(clearly delimited) to whatever prompt you send, so "apply with my resume" doesn't
-need those details typed out per task. The panel log only ever shows the prompt
-you typed, never the profile — it's personal data and the log is what ends up
-pasted into bug reports.
+There is no Profile pane and deliberately no second copy of your details in the
+panel: `read_file` hands the agent the real resume through the same allow-list
+`upload` uses, so "fill this from my resume" is answered from the document
+itself. Anything a form asks for that isn't in the file — work authorisation,
+a start date — goes in the prompt.
 
-The resume itself uploads by KEY, never a path — the model only ever sees a
+The resume uploads by KEY, never a path — the model only ever sees a
 name like `resume` in the tool description, never a filesystem path (it runs in
 the browser process, which can read anything you can). A repo-root
 `.endo-files.json` is the one place a key becomes an absolute path, and it's

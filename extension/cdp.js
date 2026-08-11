@@ -41,6 +41,16 @@ function invalidate(why) {
   console.log(`endo: refs invalidated (${why})`);
 }
 
+// Chrome does not always send Target.detachedFromTarget for an OOPIF whose
+// renderer went away, so `sessions` accumulates corpses: every later snapshot
+// pays a failed round trip and a line of noise per dead frame, forever — three
+// at once were seen on a real run. Nothing else can tell us they are gone, so
+// the failure IS the notification. Drop on the error that means "this session
+// no longer exists" and nothing broader: an Accessibility or DOM error is a
+// live frame having a bad moment, and forgetting it would lose a real frame.
+const GONE = /session with given id|target closed/i;
+const dropIfDead = (sessionId, err) => sessionId !== MAIN && GONE.test(err.message) && sessions.delete(sessionId);
+
 function setupSession(sessionId) {
   // Nested OOPIFs: each new session needs its own auto-attach or a frame two
   // levels deep never attaches.
@@ -329,7 +339,10 @@ export async function snapshot(options) {
       out.push(text);
     } catch (err) {
       // Frames come and go mid-snapshot; one dead frame must not kill the read.
-      out.push(`(frame ${frame.tag} unavailable: ${err.message})`);
+      // A frame that is gone for good says nothing worth a line — it is not
+      // "unavailable", it does not exist, and the model cannot act on it.
+      if (dropIfDead(sessionId, err)) console.log(`endo: frame ${frame.tag} is gone — dropped`);
+      else out.push(`(frame ${frame.tag} unavailable: ${err.message})`);
     }
   }
   return out.join("\n");
@@ -514,7 +527,8 @@ export async function upload(path, match, options) {
       }
     } catch (err) {
       // Frames come and go; one dead frame must not kill the whole operation.
-      console.warn(`endo: upload scan skipped frame ${frame.tag}`, err);
+      if (dropIfDead(sessionId, err)) console.log(`endo: frame ${frame.tag} is gone — dropped`);
+      else console.warn(`endo: upload scan skipped frame ${frame.tag}`, err);
     }
   }
 

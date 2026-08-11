@@ -62,6 +62,9 @@ None of this is doable from a terminal; all of it is cheap once the extension is
 8. **C8, the Cursor checklist** on `composer-2.5` and `cursor-grok-4.5-medium` — the only thing
    that retires "never really tried it with cursor". *(P5/P9)*
 9. **A cookie-walled page does not stop the run.** *(P9)*
+10. **The P11b restyle in a real side panel** — the new icon in Chrome's toolbar, and the empty
+    state actually on screen on a fresh session (it was verified headless, where the composer
+    and the seed rows are real but Chrome's own panel chrome around them is not). *(P11b)*
 
 ### Phase 11 — the two features left
 
@@ -89,10 +92,9 @@ None of this is doable from a terminal; all of it is cheap once the extension is
 
 ### Still queued, unscheduled
 
-Dead OOPIF sessions; cheaper stale-ref recovery than a whole page; the profile field's
-job-shaped costume; `@`-mentioning a tab as context (Comet has it; our fresh-Run re-attach
-covers the failure that actually bit us); Chrome tab groups (rejected for now — Claude's version
-drew four bug reports for groups that multiply and never clean up).
+Cheaper stale-ref recovery than a whole page; `@`-mentioning a tab as context (Comet has it;
+our fresh-Run re-attach covers the failure that actually bit us); Chrome tab groups (rejected
+for now — Claude's version drew four bug reports for groups that multiply and never clean up).
 
 ---
 
@@ -189,6 +191,36 @@ drew four bug reports for groups that multiply and never clean up).
     confused run can leak, not a regression to be "fixed" later.
   - **The 8,000-char cap is arithmetic, not measurement** (~2k tokens), and the resume that
     motivated the feature came in at 4,891 — so the paging path has never run on a real document.
+- **P11b — dead frames reaped, the profile pane deleted, a Comet-shaped panel and a real logo
+  (2026-08-10).** Picked as the three things left that a terminal can finish; features 2 and 3
+  stay blocked on the live run above.
+  - **Dead OOPIF sessions.** Chrome does not reliably send `Target.detachedFromTarget` when an
+    OOPIF's renderer goes away, so `sessions` accumulated corpses and every later snapshot paid
+    a failed round trip and a noise line each, forever. **The failure IS the notification**:
+    `dropIfDead()` reaps on `session with given id|target closed` and on nothing broader, in
+    both loops that walk frames (`snapshot`, `upload`). A reaped frame no longer narrates
+    itself — it does not exist, so there is nothing the model could act on. First-ever unit test
+    for cdp.js: a `chrome` stub installed **once** before a dynamic import, because the module
+    registers its debugger listeners at import time and a second stub is never wired up.
+  - **The Profile pane is gone**, textarea, storage key and all (old installs get a
+    `storage.local.remove`). P11a's `read_file` reads the real resume through the allow-list, so
+    a second hand-typed copy was personal data kept for nothing — and it was the last
+    job-application costume in the UI.
+  - **The panel took Comet's shape, not Perplexity's identity.** Floating 20px composer holding
+    every control, the question as the heading of the answer, pill selects, Run as a filled
+    circle with an arrow, radii one notch softer throughout, and the header rule deleted so the
+    shell stops reading as two stacked toolbars. **Palette unchanged** — Perplexity-teal is on
+    PRODUCT.md's anti-reference list and `NOTICE` carries a non-affiliation statement, so the
+    green stays. One `--accent` line flips it if that call was wrong.
+  - **A real mark and real icons.** A browser window whose right column is solid with the
+    pointer it drives the page with inside. `icon.svg` is the same 16-unit artwork as `#i-mark`
+    under a `transform` so the two cannot drift; `extension/icons/*.png` are rendered from it at
+    exactly 16/32/48/128 and wired into the manifest. `*.png binary` added to `.gitattributes`.
+  - **Found while verifying: the empty state had never been visible.** `add()` hid it for every
+    entry, and panel.js's own greeting note was the first entry on a fresh panel — the
+    invitation and its three example tasks rendered and vanished in the same frame. Notes are
+    now exempt (they are the panel talking about itself, not conversation) and the redundant
+    greeting note is deleted. **130 → 132 tests.**
 
 ---
 
@@ -297,9 +329,17 @@ drew four bug reports for groups that multiply and never clean up).
   `IRREVERSIBLE` (P9). Accepted residual: a page whose *only* irreversible control reads "I
   accept" (EULA-style) now goes ungated. Do not re-add the words to fix that; add the context
   the label is missing.
-- **Dead OOPIF sessions are never removed from `sessions`.** After enough navigations,
-  snapshots trail `(frame f25 unavailable: Session with given id not found.)` — seen 3 at
-  once — costing a failed CDP round trip and a line of noise per dead frame, forever.
+- **Anything appended to the transcript hides the empty state, so notes must be exempt.**
+  `add()` hid `#empty` unconditionally, and a fresh panel's very first act was posting a
+  greeting note — so the invitation and its three seed tasks were rendered and hidden in the
+  same frame, and nobody ever saw the empty state on the surface it exists for. Fixed in P11b
+  by exempting `.note`. **Any new "the panel is talking about itself" row belongs in that
+  exemption**, or it silently takes the first screen with it.
+- **cdp.js can only be unit tested with the `chrome` stub installed ONCE, before a dynamic
+  import.** It registers `debugger.onEvent` / `onDetach` at import time, so a top-level import
+  throws and a per-test stub is never wired up — the second test's `attachedToTarget` would go
+  to a listener the first stub captured. `cdp.test.ts` keeps one stub with a mutable `fail`
+  function instead.
 - **A dropped socket kills the run mid-gate.** Laptop sleep disconnected the panel; the
   approval landed after "not connected" and went nowhere. Nothing resumes.
 - **"Nothing was filled" can mean the agent filled a DIFFERENT TAB.** `attach()` binds once

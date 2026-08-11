@@ -2,9 +2,16 @@
 
 ## Visual Theme
 
-An instrument clamped to the side of a browser. Dense, hairline-ruled, quiet. The vocabulary a
-Raycast or Linear user already reads fluently: one sans family, tabular numerals, no
-decoration that isn't state.
+An instrument clamped to the side of a browser, shaped like the assistant sidecar it replaces.
+One sans family, tabular numerals, no decoration that isn't state — but soft-cornered and
+roomy rather than dense and hairline-ruled, which is the correction P11b made.
+
+**Comet's shape, not Perplexity's identity.** The layout is deliberately the one a Comet user
+already knows: a floating rounded composer holding every control you can set, the question set
+as the heading of the answer beneath it, and an ask-first opening screen. The palette is not.
+Perplexity-teal stays on the anti-reference list in PRODUCT.md, and NOTICE carries a
+non-affiliation statement, so wearing another company's brand colour and mark would undo work
+P10 did on purpose. Borrow the ergonomics; keep the identity.
 
 **Theme follows the browser, and the panel is never white.** The scene decides it: the panel is
 welded to Chrome's own side-panel chrome, so a hard-committed dark column against a light
@@ -74,12 +81,17 @@ transcript    the conversation                     (flex: 1, the only scroller)
 step          what it is doing right now           (fixed, shown only while running)
 gate          approval, when asked                 (fixed, shown only when asked)
 composer      textarea + controls                  (fixed)
-footer        profile + raw log disclosures        (fixed)
+footer        history + raw log disclosures        (fixed)
 ```
 
-Spacing scale: 2, 4, 6, 8, 12, 16, 20, 28. Radii: 6 control-inner, 9 control, 12 panel, 999
-pill. Elevation is a hairline plus a 1px/4px shadow in light; hairline plus surface lift in
-dark. No card ever nests inside another card.
+Spacing scale: 2, 4, 6, 8, 12, 16, 20, 28. Radii: 7 control-inner, 10 control, 14 panel, 20
+composer, 999 pill — every step one notch softer than the original 6/9/12, and every button
+and both selects are full pills. Elevation is a hairline plus a 1px/4px shadow in light;
+hairline plus surface lift in dark. No card ever nests inside another card.
+
+Only one horizontal rule survives in the shell, under the footer. The header has none and the
+provenance row is an inset pill rather than a full-bleed band, because two stacked full-width
+bands read as two toolbars.
 
 Nothing may produce a horizontal scrollbar. Tables and `<pre>` scroll inside their own
 `overflow-x: auto` box; everything else uses `overflow-wrap: anywhere`.
@@ -93,8 +105,25 @@ Nothing may produce a horizontal scrollbar. Tables and `<pre>` scroll inside the
   an 11.5px one-sentence summary; args and result live inside, collapsed. The node on the rail
   is 5px: hollow while queued, accent and pulsing while running, filled tick when done, danger
   when failed.
-- **Buttons**: 28px tall, 9px radius. Primary is filled accent; the rest are hairline ghosts.
-  Every one has default / hover / focus-visible / active / disabled.
+- **The mark**: a browser window whose right-hand column is solid, with the pointer it drives
+  the page with inside it — the product in one glyph, and not a comet, a spark or an orb.
+  `#i-mark` is the stroked `currentColor` version; `icon.svg` is the same 16-unit artwork under
+  a `transform`, filled on a green tile, because a Chrome toolbar icon has to survive 16px
+  against both a light and a dark toolbar. `extension/icons/*.png` are rendered from it at
+  exactly 16/32/48/128 and committed (`*.png binary` in `.gitattributes`).
+- **Buttons**: 27px tall, full pills. Primary is filled accent; the rest are ghosts. Every one
+  has default / hover / focus-visible / active / disabled. **Run is a 30px filled circle with
+  an arrow, not a labelled play button** — the send affordance the composer shape implies, and
+  dropping the word hands ~30px back to the two selects.
+- **The composer**: one soft raised block floating off the bottom edge, 20px radius, holding
+  the textarea and every control. This is the element that makes the panel read as an assistant
+  sidecar rather than as a toolbar with a text field above it.
+- **The question**: set as the heading of the answer beneath it, 15.5px/620 against the
+  answer's 14px, with a rule above every question that follows an answer. Not a bubble floated
+  right — PRODUCT.md bans chat-app cosplay, and a tailed bubble was exactly that.
+- **Empty state**: mark, one centred sentence, then three real tasks that load the composer
+  rather than firing. It is exempt from the note-hiding rule in `transcript.js`, without which
+  it renders and vanishes in the same frame on a first run.
 - **Selects**: native `<select>` with `appearance: base-select`, which hands the popup to CSS.
   Without it the dropdown is drawn by the OS: white sheet, blue highlight, no hover feedback
   and nothing to animate. With it, the picker is a themed surface (raised, hairline, 12px
@@ -109,8 +138,6 @@ Nothing may produce a horizontal scrollbar. Tables and `<pre>` scroll inside the
 - **Secondary controls are ghosts**: transparent border and background until hovered, then
   `--sink`. Only the primary action is filled. Boxing every control in a hairline made the
   composer read as a toolbar of equal-weight buttons when only one of them is the action.
-- **Empty state**: teaches the interface with three real tasks that load the composer rather
-  than firing, because an agent that starts driving on a stray click is not a first impression.
 
 ## Motion
 

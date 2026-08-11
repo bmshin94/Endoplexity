@@ -40,7 +40,6 @@ const logEl = document.getElementById("log");
 const chatEl = document.getElementById("chat");
 const stepEl = document.getElementById("step");
 const promptEl = document.getElementById("prompt");
-const profileEl = document.getElementById("profile");
 const runBtn = document.getElementById("run");
 const replyBtn = document.getElementById("reply");
 const stopBtn = document.getElementById("stop");
@@ -530,19 +529,9 @@ async function runTask(resume = false) {
   // know a tab is even open. Skipped on a reply: it is already in the
   // transcript, and the agent has been looking at that page ever since.
   const page = resume ? null : await cdp.currentPage().catch(() => null);
-  // On a reply the profile is already in the transcript being resumed, and
-  // re-appending it would re-send the same personal data every turn.
-  const profile = resume ? "" : profileEl.value.trim();
-  // The bridge gets `sent`; the transcript below shows `prompt` alone. Profile
-  // is personal data — name, email, phone — and the log is what gets pasted
-  // into bug reports. Do not "simplify" this to show `sent`.
-  const sent = [
-    page && `The page you are on is "${page.title}" — ${page.url}`,
-    prompt,
-    profile && `Applicant details:\n${profile}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  // The bridge gets `sent`; the transcript below shows `prompt` alone, so the
+  // conversation reads as what the human said rather than as plumbing.
+  const sent = [page && `The page you are on is "${page.title}" — ${page.url}`, prompt].filter(Boolean).join("\n\n");
   // The model rides along, but the bridge overrules it on a reply: a claude
   // transcript cannot be handed to cursor-agent.
   if (!send({ type: "task", prompt: sent, model: modelEl.value, mode: modeEl.value, resume })) {
@@ -557,7 +546,6 @@ async function runTask(resume = false) {
 
 // Survives the panel closing, which Chrome does on every window switch.
 modelEl.addEventListener("change", () => chrome.storage.local.set({ model: modelEl.value }));
-profileEl.addEventListener("change", () => chrome.storage.local.set({ profile: profileEl.value }));
 modeEl.addEventListener("change", () => {
   chrome.storage.local.set({ mode: modeEl.value });
   showMode();
@@ -602,18 +590,23 @@ promptEl.addEventListener("keydown", (event) => {
   runTask(resume);
 });
 
-const stored = await chrome.storage.local.get(["model", "profile", "mode", "sessions"]);
+const stored = await chrome.storage.local.get(["model", "mode", "sessions"]);
 if (stored.model) modelEl.value = stored.model;
-if (stored.profile) profileEl.value = stored.profile;
 if (stored.mode) modeEl.value = stored.mode;
+// The Profile pane was removed with P11a's read_file: the agent reads the real
+// resume through the allow-list, so a second copy pasted into the panel was
+// personal data kept for nothing. Drop what old installs already stored.
+chrome.storage.local.remove("profile");
 showMode();
 
 // Before the first note, so the greeting does not land on top of a transcript
 // that is being restored. Chrome tears this document down on every window
 // switch, so "restore what was here" is the common path, not the rare one.
 if (Array.isArray(stored.sessions) && stored.sessions.length) sessions = stored.sessions;
+// No greeting note on an empty session: the empty state below the header says
+// the same thing with three tasks you can actually click, and the note used to
+// hide it on the way past.
 if (sessions[0].entries.length) ui.restore(sessions[0].entries.slice());
-else ui.note("type a task and hit Run — `await endo.selftest()` in this panel's console checks the tools");
 drawHistory();
 
 connect();

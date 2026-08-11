@@ -2,3 +2,7 @@
 # object. Git's default LF -> CRLF conversion on Windows shifts every one of them
 # and the file stops parsing — so the fixture must round-trip byte for byte.
 *.pdf binary
+# Same reason, one step less exotic: a PNG's IDAT stream is deflate, and any
+# byte substitution inside it fails the chunk CRC. The extension icons are
+# committed, so they have to round-trip exactly.
+*.png binary

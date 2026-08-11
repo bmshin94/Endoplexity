@@ -47,7 +47,7 @@ looping GIF or MP4 at the top of the README.
 1. **0–3s.** Chrome on a real job posting, side panel open, panel idle. The
    provenance row already names the tab — that is the product's whole thesis in
    one frame.
-2. **3–6s.** Type `Fill this application with my profile, but stop before
+2. **3–6s.** Type `Fill this application from my resume, but stop before
    submitting` and press Run.
 3. **6–16s.** The trace fills in — read the page, typed into Full name, attached
    a file. Let it actually run; do not speed this up, the point is that it is
@@ -59,9 +59,9 @@ looping GIF or MP4 at the top of the README.
 Record at 360px panel width, dark theme, and a browser window narrow enough that
 the panel is a real proportion of the frame rather than a sliver.
 
-Before recording: reset to a clean session (the `+` in the header), and make sure
-the profile pane holds placeholder data — the panel shows the prompt, but a
-screen recording catches whatever is in that textarea.
+Before recording: reset to a clean session (the `+` in the header), and point
+`.endo-files.json` at a placeholder resume — the trace names the file it reads,
+and a screen recording catches it.
 
 ## Demo prompts
 
@@ -79,9 +79,9 @@ answer, not a robot.
 
 **2. Fill a form, stop at the gate** — the centrepiece, ~30s
 Page: a real Greenhouse or Lever job application.
-> Fill this application with my profile, but stop before submitting.
+> Fill this application from my resume, but stop before submitting.
 
-Shows: `type`, `select`, `upload` finding the hidden file input, and the
+Shows: `read_file`, `type`, `select`, `upload` finding the hidden file input, and the
 approval gate intercepting "Submit application". Hold on the gate. This is the
 frame that answers the objection everyone has.
 

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!--
+    Endoplexity's mark: a browser window whose right-hand column is solid, with
+    the pointer it drives the page with sitting inside. The product in one
+    glyph, and deliberately not a comet, a spark or an orb.
+
+    The geometry inside the <g> is the SAME 16-unit artwork as #i-mark in
+    panel.html, transformed rather than redrawn, so the toolbar icon and the
+    panel header cannot drift into two different marks. It is filled on a tile
+    here because a toolbar icon has to hold at 16px against both a light and a
+    dark Chrome toolbar, where a hairline on transparent disappears.
+
+    ponytail: the numbers are still typed twice. <use href="icon.svg#i-mark">
+    across files is blocked by the panel's CSP and would not inherit
+    currentColor, and a build step to share them is not worth one shape.
+  -->
+  <rect width="128" height="128" rx="28" fill="#2C7F55" />
+  <g transform="translate(16 16) scale(6.4)" fill="none" stroke="#F7FBF8" stroke-width="1.35">
+    <rect x="1.4" y="3" width="13.2" height="10" rx="2.4" />
+    <rect x="9.6" y="5.1" width="2.9" height="5.8" rx="1.25" fill="#F7FBF8" stroke="none" />
+    <circle cx="5.4" cy="8" r="1.35" fill="#F7FBF8" stroke="none" />
+  </g>
+</svg>

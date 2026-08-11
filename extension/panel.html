@@ -31,9 +31,13 @@
         --t-body: 14px;
         --t-lead: 15px;
 
-        --r-xs: 6px;
-        --r-sm: 9px;
-        --r-md: 12px;
+        /* Comet's sidecar is soft. The old 6/9/12 read as a dense instrument;
+           these are the same three steps taken up one notch, plus --r-lg for
+           the one element that carries the look: the floating composer. */
+        --r-xs: 7px;
+        --r-sm: 10px;
+        --r-md: 14px;
+        --r-lg: 20px;
 
         --ease: cubic-bezier(0.22, 1, 0.36, 1);
         --fast: 140ms;
@@ -115,10 +119,12 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 11px 14px 10px;
-        border-bottom: 1px solid var(--line-soft);
+        /* No rule under it. Comet's sidecar reads as one continuous surface
+           from title to composer; the only horizontal line left in the shell is
+           the one under the provenance row, which is a real boundary. */
+        padding: 12px 14px 8px;
       }
-      .mark { width: 16px; height: 16px; flex: none; color: var(--text); }
+      .mark { width: 17px; height: 17px; flex: none; color: var(--accent); }
       .wordmark { font-size: 13px; font-weight: 600; letter-spacing: -0.012em; }
       .wordmark span { color: var(--text-faint); font-weight: 500; }
       .conn {
@@ -153,9 +159,14 @@
         align-items: center;
         gap: 8px;
         min-width: 0;
-        padding: 7px 14px;
+        /* Inset and rounded rather than a full-bleed band: the band read as a
+           second toolbar stacked under the first, which is exactly the stacked-
+           chrome look this pass is removing. */
+        margin: 0 12px 4px;
+        padding: 6px 10px;
         background: var(--sink);
-        border-bottom: 1px solid var(--line-soft);
+        border: 1px solid var(--line-soft);
+        border-radius: 999px;
       }
       #where-state { width: 13px; height: 13px; color: var(--text-faint); }
       #where-state.run { color: var(--accent); animation: pulse 1.6s var(--ease) infinite; }
@@ -203,19 +214,35 @@
       @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
       @keyframes pulse { 50% { opacity: 0.35; } }
 
-      /* What you typed, read back exactly as typed. Subordinate to the answer
-         on purpose: it is the question, not the content. */
+      /*
+        What you typed, read back exactly as typed — now as the heading of the
+        answer beneath it rather than a bubble floated to the right.
+
+        This is the single most recognisable thing about Comet's assistant, and
+        it settles an argument the old panel was losing: PRODUCT.md bans
+        "chat-app cosplay — two-column bubbles", and a right-aligned bubble with
+        a tail was precisely that. 15.5px against the answer's 14px is enough to
+        title a section without shouting over it, so the answer is still the
+        content.
+      */
       .msg.user {
-        align-self: flex-end;
-        max-width: 90%;
-        margin: 2px 0 14px;
-        padding: 7px 11px;
-        border: 1px solid var(--line);
-        border-radius: var(--r-md) var(--r-md) var(--r-xs) var(--r-md);
-        background: var(--raise);
-        box-shadow: var(--shadow-sm);
+        margin: 6px 0 10px;
+        max-width: 68ch;
         white-space: pre-wrap;
-        font-size: var(--t-ui);
+        font-size: 15.5px;
+        font-weight: 620;
+        line-height: 1.36;
+        letter-spacing: -0.014em;
+        color: var(--text);
+      }
+      /* Every question after the first opens a new stretch of conversation.
+         Keyed off a preceding answer, not :first-child — the empty state is
+         hidden rather than removed, so it is still the first child and the very
+         first question was drawing a rule under nothing. */
+      .msg.assistant ~ .msg.user {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line-soft);
       }
 
       /* ---- the answer ---------------------------------------------------- */
@@ -421,18 +448,34 @@
       }
 
       /* ---- empty state ---------------------------------------------------- */
-      #empty { margin: auto 0 6px; animation: none; }
+      /*
+        An ask-first opening, the way Comet's sidecar greets you: the mark, one
+        sentence of what this thing can do, then three real tasks. Centred and
+        pushed toward the middle of the column rather than parked above the
+        composer, so the first screen is an invitation instead of a form.
+      */
+      #empty {
+        margin: auto 0;
+        animation: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
       /* Hidden, not removed — New Session brings it back, and its seed buttons
          are wired once at load. */
       #empty.gone { display: none; }
+      #empty .mark { width: 30px; height: 30px; margin-bottom: 12px; }
       #empty p {
-        margin: 0 0 16px;
-        font-size: 13px;
+        margin: 0 0 20px;
+        font-size: 13.5px;
         line-height: 1.55;
         color: var(--text-soft);
-        max-width: 42ch;
+        max-width: 34ch;
+        text-wrap: balance;
       }
       .label {
+        align-self: flex-start;
         font-size: var(--t-micro);
         font-weight: 600;
         letter-spacing: 0.08em;
@@ -448,16 +491,17 @@
         font: inherit;
         font-size: var(--t-ui);
         line-height: 1.45;
-        color: var(--text);
-        padding: 9px 11px;
-        margin-bottom: 6px;
+        color: var(--text-soft);
+        padding: 10px 13px;
+        margin-bottom: 7px;
         border: 1px solid var(--line-soft);
-        border-radius: var(--r-sm);
+        border-radius: var(--r-md);
         background: var(--raise);
         cursor: pointer;
-        transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+        transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease),
+          background var(--fast) var(--ease);
       }
-      .seed:hover { border-color: var(--accent); transform: translateX(2px); }
+      .seed:hover { color: var(--text); border-color: var(--line); background: var(--sink); }
 
       /* ---- live step ------------------------------------------------------ */
       #step {
@@ -538,11 +582,16 @@
       #gate .pair button { flex: 1; }
 
       /* ---- composer --------------------------------------------------------- */
+      /*
+        The composer is the element that makes this read as Comet's assistant
+        rather than as a toolbar: one soft raised block floating off the bottom
+        edge, with everything you can set living inside it.
+      */
       .composer {
         flex: none;
-        margin: 0 12px 10px;
+        margin: 0 10px 12px;
         border: 1px solid var(--line);
-        border-radius: var(--r-md);
+        border-radius: var(--r-lg);
         background: var(--raise);
         box-shadow: var(--shadow-sm);
         transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
@@ -557,9 +606,9 @@
         border: 0;
         background: none;
         color: inherit;
-        font: 13px/1.5 var(--sans);
+        font: 13.5px/1.5 var(--sans);
         resize: none;
-        padding: 10px 12px 4px;
+        padding: 13px 15px 5px;
         max-height: 148px;
       }
       #prompt:focus { outline: none; }
@@ -574,7 +623,7 @@
         flex-wrap: nowrap;
         align-items: center;
         gap: 6px;
-        padding: 4px 8px 8px;
+        padding: 5px 8px 8px 10px;
       }
       /*
         appearance: base-select hands the dropdown to CSS.
@@ -605,8 +654,11 @@
         background: transparent;
         /* Transparent rather than absent, so nothing shifts on hover. */
         border: 1px solid transparent;
-        border-radius: var(--r-sm);
-        padding: 0 5px 0 8px;
+        /* Pills, matching the provenance chip above. The settings inside a
+           Comet-shaped composer read as tokens you can swap, not as form
+           fields. */
+        border-radius: 999px;
+        padding: 0 5px 0 9px;
         cursor: pointer;
         transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
       }
@@ -705,14 +757,24 @@
         color: var(--text-soft);
         background: transparent;
         border: 1px solid transparent;
-        border-radius: var(--r-sm);
+        border-radius: 999px;
         cursor: pointer;
         transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease),
           color var(--fast) var(--ease), opacity var(--fast) var(--ease);
       }
       button .icon { width: 14px; height: 14px; }
-      button.square { width: 27px; flex: none; padding: 0; }
-      #run { flex: none; }
+      button.round { width: 27px; flex: none; padding: 0; }
+      /* Chrome's side panel is user-resizable. Once the two selects hit their
+         104px cap the slack has to go somewhere, and left of the action cluster
+         is the only place it reads as deliberate — otherwise Run drifts into
+         the middle of a wide composer. */
+      #stop { margin-left: auto; }
+      /* Send, not play: a filled circle with an arrow into it, which is the
+         affordance Comet's composer ends on. Dropping the "Run" label also
+         hands ~30px back to the two selects, so the row still clears Chrome's
+         minimum panel width with room to spare. */
+      #run { flex: none; width: 30px; height: 30px; padding: 0; }
+      #run .icon { width: 15px; height: 15px; }
       button:hover:not(:disabled) { background: var(--sink); color: var(--text); }
       button:active:not(:disabled) { translate: 0 0.5px; }
       button:disabled { opacity: 0.35; cursor: default; }
@@ -757,7 +819,7 @@
       footer details[open] summary { color: var(--text); }
       /* The disclosure opens as a sheet above the composer, so the summary row
          never jumps and the transcript is never pushed off screen. */
-      #profile, #log, #history {
+      #log, #history {
         position: fixed;
         left: 12px;
         right: 12px;
@@ -774,8 +836,6 @@
         line-height: 1.55;
         animation: rise var(--slow) var(--ease) both;
       }
-      #profile { resize: vertical; min-height: 104px; }
-      #profile:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash), var(--shadow-md); }
       #log {
         max-height: 44vh;
         overflow: auto;
@@ -845,10 +905,19 @@
          out an icon font or any external asset, and <use> means each shape is
          defined once however many times it appears. -->
     <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
-      <symbol id="i-mark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
-        <circle cx="10.6" cy="5.4" r="3.1" fill="currentColor" stroke="none" />
-        <path d="M7.4 8.6 1.6 14.4" opacity=".55" />
-        <path d="M10.4 10.2 6.6 14" opacity=".3" />
+      <!-- A browser window whose right column is solid, with the pointer it
+           drives the page with sitting inside. The stroked twin of icon.svg;
+           see the note there about why the geometry is written twice. -->
+      <symbol id="i-mark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35">
+        <rect x="1.4" y="3" width="13.2" height="10" rx="2.4" />
+        <rect x="9.6" y="5.1" width="2.9" height="5.8" rx="1.25" fill="currentColor" stroke="none" />
+        <circle cx="5.4" cy="8" r="1.35" fill="currentColor" stroke="none" />
+      </symbol>
+      <!-- Comet's send affordance, and the one the composer now uses: an arrow
+           into the circle, not a media-player triangle. -->
+      <symbol id="i-send" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 12.8V3.6" />
+        <path d="M4 7.5 8 3.4l4 4.1" />
       </symbol>
       <symbol id="i-dot" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
         <circle cx="8" cy="8" r="3.4" />
@@ -863,19 +932,12 @@
       <symbol id="i-x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
         <path d="M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8" />
       </symbol>
-      <symbol id="i-run" viewBox="0 0 16 16">
-        <path d="M4.6 3.3 12.6 8l-8 4.7z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-      </symbol>
       <symbol id="i-stop" viewBox="0 0 16 16">
         <rect x="4.6" y="4.6" width="6.8" height="6.8" rx="1.6" fill="currentColor" />
       </symbol>
       <symbol id="i-reply" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12.5 3.2v3.4a2.6 2.6 0 0 1-2.6 2.6H4.2" />
         <path d="M6.8 6.6 4.2 9.2l2.6 2.6" />
-      </symbol>
-      <symbol id="i-user" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="8" cy="5.6" r="2.6" />
-        <path d="M3.3 13.2c0-2.3 2.1-3.6 4.7-3.6s4.7 1.3 4.7 3.6" />
       </symbol>
       <symbol id="i-terminal" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.2" />
@@ -903,7 +965,7 @@
         <span id="status">starting…</span>
         <span id="dot"></span>
       </span>
-      <button id="new" class="square" title="New session — this one is kept in History" aria-label="New session">
+      <button id="new" class="round" title="New session — this one is kept in History" aria-label="New session">
         <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
       </button>
     </header>
@@ -916,11 +978,12 @@
 
     <div id="chat" role="log" aria-live="polite">
       <div id="empty">
+        <svg class="mark" aria-hidden="true"><use href="#i-mark" /></svg>
         <p>I can read and act on the page you are looking at: click, type, fill forms, move between tabs.</p>
         <div class="label">Try</div>
         <button class="seed">Summarise this page in five bullets</button>
         <button class="seed">Find the pricing page and compare the tiers in a table</button>
-        <button class="seed">Fill this form with my profile, but stop before submitting</button>
+        <button class="seed">Fill this form from my resume, but stop before submitting</button>
       </div>
     </div>
 
@@ -974,15 +1037,14 @@
           <option value="normal" selected>Normal</option>
           <option value="trust">Trust it</option>
         </select>
-        <button id="stop" class="square" disabled title="Stop the running task" aria-label="Stop">
+        <button id="stop" class="round" disabled title="Stop the running task" aria-label="Stop">
           <svg class="icon" aria-hidden="true"><use href="#i-stop" /></svg>
         </button>
-        <button id="reply" class="square" disabled title="Reply — ctrl+Enter. Answers the agent, keeping the last run's context" aria-label="Reply">
+        <button id="reply" class="round" disabled title="Reply — ctrl+Enter. Answers the agent, keeping the last run's context" aria-label="Reply">
           <svg class="icon" aria-hidden="true"><use href="#i-reply" /></svg>
         </button>
-        <button id="run" class="primary" title="Run — Enter. Starts a fresh task on the tab you are looking at">
-          <svg class="icon" aria-hidden="true"><use href="#i-run" /></svg>
-          Run
+        <button id="run" class="primary" title="Run — Enter. Starts a fresh task on the tab you are looking at" aria-label="Run">
+          <svg class="icon" aria-hidden="true"><use href="#i-send" /></svg>
         </button>
       </div>
     </div>
@@ -991,14 +1053,6 @@
       <details id="history-open">
         <summary><svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>History</summary>
         <div id="history"></div>
-      </details>
-      <details>
-        <summary><svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>Profile</summary>
-        <textarea id="profile" rows="5" spellcheck="false" placeholder="Name: Ada Lovelace
-Email: ada@example.com
-Phone: +1 555 0100
-Location: Remote
-Work authorisation: US citizen"></textarea>
       </details>
       <details>
         <summary><svg class="icon" aria-hidden="true"><use href="#i-terminal" /></svg>Log</summary>

@@ -63,7 +63,14 @@ function add(node) {
   if (!chatEl) return node;
   // Hidden rather than removed: New Session brings it back, and its seed
   // buttons are wired once at load — a removed node takes its listeners with it.
-  chatEl.querySelector("#empty")?.classList.add("gone");
+  //
+  // Notes are exempt, and that exemption is the whole reason the empty state is
+  // ever seen: a note is the panel talking about itself (connection state, a
+  // warning), not conversation, and the first thing a fresh panel did was post
+  // one — which hid the empty state before anybody could read it. Measured in
+  // headless: on a first run the invitation and its three example tasks
+  // rendered and vanished in the same frame.
+  if (!node.classList?.contains("note")) chatEl.querySelector("#empty")?.classList.add("gone");
   const atBottom = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 60;
   chatEl.appendChild(node);
   if (atBottom) chatEl.scrollTop = chatEl.scrollHeight;
