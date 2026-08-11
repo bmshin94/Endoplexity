@@ -63,6 +63,80 @@ Before recording: reset to a clean session (the `+` in the header), and make sur
 the profile pane holds placeholder data — the panel shows the prompt, but a
 screen recording catches whatever is in that textarea.
 
+## Demo prompts
+
+Ordered so each one shows a capability the previous one didn't. Every prompt
+assumes the relevant page is already open and focused — a fresh Run binds to the
+tab you are looking at, so open the page *first*, then press Run.
+
+**1. Read and render** — opener, ~15s
+Page: any product or pricing page.
+> Summarise this page in five bullets, then put the key numbers in a table.
+
+Shows: the accessibility snapshot, and markdown arriving as a real table instead
+of literal pipes. Good first shot because it finishes fast and looks like an
+answer, not a robot.
+
+**2. Fill a form, stop at the gate** — the centrepiece, ~30s
+Page: a real Greenhouse or Lever job application.
+> Fill this application with my profile, but stop before submitting.
+
+Shows: `type`, `select`, `upload` finding the hidden file input, and the
+approval gate intercepting "Submit application". Hold on the gate. This is the
+frame that answers the objection everyone has.
+
+**3. Multi-tab comparison** — ~40s
+Page: anywhere.
+> Open the pricing pages for Vercel, Netlify and Cloudflare Pages in three tabs,
+> then compare their free tiers in one table.
+
+Shows: `use_tab` opening tabs, `navigate` with `full:` reading prose on arrival,
+and the provenance row changing as it moves. The strongest "this is actually
+agentic" shot.
+
+**4. Navigate and come back** — ~20s
+Page: any docs site.
+> Find their API rate limits, then go back and tell me what the homepage claims
+> about uptime.
+
+Shows: `back` driving the real navigation history rather than guessing a URL.
+
+**5. Lazy content** — ~20s
+Page: an infinite feed (Hacker News' front page, a subreddit, a changelog).
+> Scroll down and give me the first five items that mention pricing.
+
+Shows: `scroll` as a real wheel event, so content that isn't in the DOM yet
+loads. `window.scrollBy` would not do this.
+
+**6. A dropdown that isn't a `<select>`** — ~15s
+Page: the country field on a Greenhouse form.
+> Set the country to Ireland.
+
+Shows: the click-the-combobox-then-click-the-option path. Worth including
+precisely because it's the case naive automation fails.
+
+**7. Equations** — ~15s
+Page: a Wikipedia maths article.
+> Explain the main formula here and re-derive it step by step.
+
+Shows: LaTeX rendered as native MathML, no library, under a CSP that forbids
+every external host.
+
+**8. The modes** — ~20s, optional closer
+Run prompt 2 twice, once in **Watch me** and once in **Trust it**.
+
+Shows: the same task asking for approval on everything, then on nothing, with
+the mode chip in red the whole time `trust` is set. Ends on the honest note that
+the safety is a real setting, not a slogan.
+
+### For the recording
+
+- End on a cost chip. `$0.0959 · 112,064 tokens · 10 turns` is the argument.
+- Don't speed up the trace. It reading as real is the point; fast-forward reads
+  as fake.
+- Prompt 2 needs `.endo-files.json` configured, or `upload` has no key to
+  resolve.
+
 ## Repo settings checklist
 
 - [ ] Repo name `endoplexity`, description = the one-liner from `package.json`

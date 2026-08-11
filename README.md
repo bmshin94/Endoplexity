@@ -40,8 +40,13 @@ instead of two.
 - Node **24+**
 - Chrome **114+** (135+ for the themed dropdowns; older Chrome falls back to the
   native ones)
-- A **Claude** subscription with the `claude` CLI, and/or a **Cursor**
-  subscription with `cursor-agent`
+- A **Claude** subscription — **Pro works, not just Max** — with the `claude`
+  CLI, and/or a **Cursor** subscription with `cursor-agent`
+
+Claude Code runs on Pro and Max alike, so the cheaper plan is enough to drive
+this. Pro's usage limits are lower, and Opus access depends on your plan, so on
+Pro pick Sonnet in the model dropdown; the browser work is
+snapshot-read-click, which is not what you need a frontier reasoning model for.
 
 ## Install
 

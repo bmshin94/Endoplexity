@@ -2,7 +2,7 @@
 
 ## Context
 
-**The problem.** Perplexity Comet and every open-source clone of it (nanobrowser 13.5k⭐, browser-use, BrowserKing, tabagent, webpilot) share one flaw: they need an API key and burn metered credits. Meanwhile two agentic loops are already paid for and idle on this machine — Claude Max via the `claude` CLI, and Cursor (Composer 2.5 / Grok 4.5) via `cursor-agent`. Both run headless, both emit structured NDJSON, both speak MCP.
+**The problem.** Perplexity Comet and every open-source clone of it (nanobrowser 13.5k⭐, browser-use, BrowserKing, tabagent, webpilot) share one flaw: they need an API key and burn metered credits. Meanwhile two agentic loops are already paid for and idle on this machine — Claude (Pro or Max) via the `claude` CLI, and Cursor (Composer 2.5 / Grok 4.5) via `cursor-agent`. Both run headless, both emit structured NDJSON, both speak MCP.
 
 **The insight.** The brain does not need to be written. `claude -p` *is* a tool-calling agent loop. What is missing is **hands** (a browser it can touch) and a **face** (a panel showing the work). So this is a thin shell — a tool server and a UI — not an agent framework.
 

@@ -1,6 +1,6 @@
 # Endoplexity — phase state
 
-**Goal: replicate Perplexity Comet's browser-control feature**, driven by existing Claude Max
+**Goal: replicate Perplexity Comet's browser-control feature**, driven by existing Claude (Pro or Max)
 and Cursor subscriptions instead of metered API keys. Design doc: `docs/specs/design.md`.
 Job-applying is a *test scenario*, never the product — judge features by "does Comet do this
 on any site", not "does this finish the job-form task".
@@ -153,10 +153,33 @@ its output is `.endo-bridge.log`; `Endoplexity.vbs` is the manual start. Panel c
   LinkedIn post, a demo shot list, a repo-settings checklist). **106/106 tests still pass**, and
   the old `CometClone.vbs` was deleted from the Startup folder so login does not fire two bridges.
 
-## Current phase: 10 — launch
+## Current phase: 11 — the three queued features
 
-**Done from a terminal (above).** What is left is everything that needs a browser, a camera, or
-a decision only the user can make:
+**Start here in a fresh session.** P10 (launch) ran early by accident — it was meant to be a
+future phase — and its terminal-side work is done and committed, so the remaining launch items
+are parked below as chores, not as a phase. These three are the actual work, in the order they
+should probably be taken:
+
+1. **File input the agent can READ** (pdf, docx, xlsx). Today `upload` is opaque: it pushes a
+   file at a form field and the agent never sees the contents. The lazy first question is
+   whether this is a new MCP tool (`read_file`, resolving a configured KEY exactly as `upload`
+   does — `files.ts` already has the allowlist, and the security invariant that the model never
+   sees a path must hold) or a panel-side extraction. **Expect a dependency argument:** docx and
+   xlsx are zips of XML and are reachable with `node:zlib` plus ~60 lines, but PDF text
+   extraction is a real parser and is the one place "add a dep" is probably right. Decide that
+   before writing anything.
+2. **Token efficiency, second pass.** The user's words are "this is too consuming". P3 measured
+   the 5-tool world; the bill now carries the 13-tool schema (~1,829 tokens) and `full:`
+   returns. Needs a live measurement run to mean anything — and four of those have died in a
+   row (wrong tab, Reply, laptop sleep, an agent answering from memory), so **read the Enter/
+   ctrl+Enter gotcha before trusting any number**.
+3. **The claude path brought up to the cursor path's quality.** "Kinda ass with claude, really
+   good with cursor" is the standing verdict and it has never been diagnosed — C8 was written
+   to test cursor. This one is blocked on a live run before any code: find out *what* is worse
+   (turns? tool adoption? fake-XML retries? the ToolSearch deferral?) before fixing anything.
+
+**Parked launch chores (P10), all needing a browser, a camera, or a decision only the user can
+make:**
 
 - **Create the GitHub repo and push.** Assumed URL `github.com/Endokelp/endoplexity` — it is
   written into `README.md` and the LinkedIn draft, so if the real one differs, both change.
