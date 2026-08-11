@@ -1,4 +1,4 @@
-# CometClone — phase state
+# Endoplexity — phase state
 
 **Goal: replicate Perplexity Comet's browser-control feature**, driven by existing Claude Max
 and Cursor subscriptions instead of metered API keys. Design doc: `docs/specs/design.md`.
@@ -13,9 +13,9 @@ talks to a model, the CLI never talks to Chrome.
 `npm test` · `npm run cursor-login` (once, for the Cursor models — never `cursor-agent login`).
 Then `chrome://extensions` → Load unpacked → `extension/`, open the side panel, type a task,
 hit Run; **Reply** (ctrl+Enter) continues the last conversation. The bridge is invisible, so
-its output is `.comet-bridge.log`; `CometClone.vbs` is the manual start. Panel console:
-`comet.selftest("C:\path\to\file.pdf")`, `comet.measure()`, `comet.log()`. Uploads read
-`.comet-files.json` (copy `.comet-files.example.json`). See `docs/handrun.md`.
+its output is `.endo-bridge.log`; `Endoplexity.vbs` is the manual start. Panel console:
+`endo.selftest("C:\path\to\file.pdf")`, `endo.measure()`, `endo.log()`. Uploads read
+`.endo-files.json` (copy `.endo-files.example.json`). See `docs/handrun.md`.
 
 ## Done
 
@@ -136,11 +136,41 @@ its output is `.comet-bridge.log`; `CometClone.vbs` is the manual start. Panel c
   snaps back to live first. **96 → 106 tests**; the DOM half was checked in headless Chrome
   (17 assertions, both themes, footer one row at 360px *and* 320px).
 
-## Current phase: 9 — closing out
+- **P10 — rebrand to Endoplexity, and made launch-ready (2026-08-10).** `CometClone` names a
+  competitor's product with "Clone" attached, which is a bad public repo and trademark-adjacent;
+  the user chose **Endoplexity**. Renamed case-sensitively so genuine "Perplexity Comet"
+  references survive: brand, `globalThis.endo` console API, the `endo:` CDP log prefix, and the
+  **MCP server `comet` → `endo`** (so `mcp__endo__*`, `Mcp(endo:*)`) — model-facing, but pinned
+  by claude.test.ts and cursor.test.ts, so drift cannot go silent, and one char shorter per tool
+  name than before. Runtime dotfiles went `.comet-*` → `.endo-*` and were **renamed on disk
+  rather than regenerated**, so the token, the file map and `~/.endo-cursor`'s Cursor login all
+  survived; no migration shim ships in the repo for a rename with one user. `LICENSE` is
+  **Apache-2.0**, fetched verbatim (11,358 bytes) rather than written from memory — chosen over
+  MIT for its §6 no-trademark-licence clause and its fuller liability disclaimer, which is the
+  part that matters for software that can click "Submit". `NOTICE` carries the non-affiliation
+  statement, which does more protective work than the licence choice does. New: `README.md`
+  (architecture, safety model, the measured cost, honest known-gaps), `docs/launch.md` (the
+  LinkedIn post, a demo shot list, a repo-settings checklist). **106/106 tests still pass**, and
+  the old `CometClone.vbs` was deleted from the Startup folder so login does not fire two bridges.
 
-**Owed before this closes — all live, none of it doable from a terminal:** load `extension/`
+## Current phase: 10 — launch
+
+**Done from a terminal (above).** What is left is everything that needs a browser, a camera, or
+a decision only the user can make:
+
+- **Create the GitHub repo and push.** Assumed URL `github.com/Endokelp/endoplexity` — it is
+  written into `README.md` and the LinkedIn draft, so if the real one differs, both change.
+  `docs/launch.md` has the repo-settings checklist; the first push is the moment to confirm no
+  `.endo-token` / `.endo-files.json` / `.endo-mcp.json` rode along.
+- **Record the demo.** Shot list is in `docs/launch.md`; the recording itself cannot be produced
+  from here. The gate frame at 16–21s is the one that answers "you let an AI click submit?".
+- **Post it.** Draft is written and needs a real link before it goes out.
+- **Decide the copyright name.** `NOTICE` says "Endokelp" — the git identity, not necessarily
+  the name wanted on a legal notice.
+
+**Still owed from phase 9 — all live, none of it doable from a terminal:** load `extension/`
 unpacked and confirm Chrome's id equals `lblllkbcfcaecfpefighocaefnfkebjj` (a unit test
-recomputing our own formula cannot catch a disagreement with Chrome); `await comet.selftest()`
+recomputing our own formula cannot catch a disagreement with Chrome); `await endo.selftest()`
 back to 27/27; one real task whose answer contains a table; close and reopen the side panel
 mid-task and confirm events keep arriving; a cookie-walled page not stopping; and **C8, the
 Cursor checklist** on both `composer-2.5` and `cursor-grok-4.5-medium` — the only thing that
@@ -157,7 +187,7 @@ harness; it was scratch, and rebuilding it is a 90-line http server plus a swapp
 clause ("never answer from memory") actually fixes the zero-tool research answer. If it does
 not, the deferred-MCP-tools hypothesis survives and earns real budget.
 
-**Queued as the next phase, by the user (2026-08-10)** — after a run where "grok 4.5 works
+**Queued behind the launch, set by the user (2026-08-10)** — after a run where "grok 4.5 works
 like butter" and the product is finally usable, these four are what stand between it and an
 experience. **Sessions + history is done (P9c above).** The three left: **file input the agent
 understands** (pdf, docx, xlsx — not just `upload`'s opaque file-to-a-form-field path; the
@@ -176,8 +206,8 @@ while the panel is closed and reopened lands its events in the right session.
 profile field's job-shaped costume; `@`-mentioning a tab as context (Comet has it, our
 fresh-Run re-attach covers the failure that actually bit us); Chrome tab groups (rejected for
 now — Claude's version drew four bug reports for groups that multiply and never clean up);
-README/LICENSE/demo assets (deferred, software only); and a compression pass on this file,
-now well over the 150-line cap.
+and a compression pass on this file, now well over the 150-line cap. **README/LICENSE landed
+in P10;** the demo recording is the only launch asset still outstanding.
 
 ## Decisions locked
 
@@ -225,7 +255,7 @@ now well over the 150-line cap.
 
 ## Gotchas
 
-- **Never rotate `.comet-token` or `.comet-files.json` without asking.**
+- **Never rotate `.endo-token` or `.endo-files.json` without asking.**
 - **Dropping the bridge's session id has to survive a disconnected socket.** New Session sends
   `new-session`, but with the panel disconnected there is nothing to send it to — and the
   bridge still holds the id, so its next `hello` said `resumable: true` and lit Reply back up
@@ -285,7 +315,7 @@ now well over the 150-line cap.
   posting in another tab, agent navigated *its own* tab there and filled the form perfectly —
   every tool returned success, every value landed, none of it on the page being watched.
   Fixed by re-attaching on a fresh Run, but the diagnostic habit matters more: **read
-  `comet: attached to tab N — <url>` in the panel console before believing an action failed.**
+  `endo: attached to tab N — <url>` in the panel console before believing an action failed.**
   Naming the page (704e08c) does not catch this — the prompt said "about:blank" truthfully.
 - **`navigate` waits for `complete` with NO timeout, deliberately** — unlike `go()` and
   `settle()`, which cap at 10s. Capping it was tried on 2026-08-09 and reverted unused: an
@@ -321,7 +351,7 @@ now well over the 150-line cap.
 - **Both CLIs report the session id as `session_id`**, cursor included, despite its flag being
   spelled `--resume [chatId]`. `index.ts` reads three spellings as cheap insurance.
 - **A fresh claude run's init lists only `["ToolSearch"]`** — MCP tools show up in a later or
-  resumed run's init, so "no comet tools in init" is NOT proof of a broken run, which weakens
+  resumed run's init, so "no endo tools in init" is NOT proof of a broken run, which weakens
   it as the fake-`<function_calls>` diagnostic.
 - **cursor can end a turn with `result: ""`** when the model left its answer in `thinking`
   deltas and emitted no assistant text (composer-2.5). The panel renders with `||`, not `??` —
@@ -346,8 +376,8 @@ now well over the 150-line cap.
   later turn. Measure a task's cost before and after any tool change.
 - **Actions return the page, so anything that breaks rendering reads as a broken action.**
   Rendering must never throw on page data: no AX field is a guaranteed string.
-- Running a second bridge to smoke-test rewrites **both** `.comet-mcp.json` and
-  `~/.comet-cursor/home/.cursor/mcp.json` to that port. Back both up, or restart the real one.
+- Running a second bridge to smoke-test rewrites **both** `.endo-mcp.json` and
+  `~/.endo-cursor/home/.cursor/mcp.json` to that port. Back both up, or restart the real one.
 - Greenhouse runs an **invisible reCAPTCHA enterprise** iframe — expect it on real submits.
 - Cursor's model ids are not the design doc's: `cursor-grok-4.5-{low,medium,high}`, each with a
   `-fast` twin; `--list-models` needs login and is the source of truth. Its stream-json is
@@ -381,17 +411,17 @@ now well over the 150-line cap.
   and unknown keys; the model never sees a filesystem path at all
 - **`--resume` restores a conversation, not a permission set.** Every restriction flag is
   passed again on a resumed spawn. Verified 2026-08-04 by reading a resumed run's init event —
-  `ToolSearch` + `mcp__comet__*` and nothing else — not by reading docs
+  `ToolSearch` + `mcp__endo__*` and nothing else — not by reading docs
 - The Cursor CLI has **no tool flags at all** — its boundary is `permissions.deny` (`Shell(*)`,
-  `Write(*)`, `Read(*)`, `WebFetch(*)`) plus `allow: ["Mcp(comet:*)"]`, and it only holds while
+  `Write(*)`, `Read(*)`, `WebFetch(*)`) plus `allow: ["Mcp(endo:*)"]`, and it only holds while
   HOME is pinned. Verified by running a shell call, not by reading docs
 - claude spawns with **`--tools "ToolSearch"`** (an allowlist — a denylist was measured failing)
-  plus `--allowedTools "ToolSearch,mcp__comet__*" --strict-mcp-config --setting-sources ""`.
+  plus `--allowedTools "ToolSearch,mcp__endo__*" --strict-mcp-config --setting-sources ""`.
   `--tools ""` is wrong too: MCP tools arrive **deferred**, ToolSearch is the only way to reach
   them, and it must be in `--allowedTools`. `--setting-sources ""` is worth real money — with
   the operator's hooks and CLAUDE.md loaded, a one-tool task billed 33k tokens of preamble and
   $0.41 instead of $0.02
 - `/mcp` requires the token and **refuses any request carrying an `Origin`**. Re-verified
   2026-08-04: 401/401/401/200
-- The token never goes in argv — it lives in `.comet-mcp.json`, mode 0600, gitignored
+- The token never goes in argv — it lives in `.endo-mcp.json`, mode 0600, gitignored
 - No `--dangerously-skip-permissions`, and never `--bare` (it forces `ANTHROPIC_API_KEY`)
