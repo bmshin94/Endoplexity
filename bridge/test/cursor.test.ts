@@ -11,29 +11,29 @@ import { cursorArgs, writeCursorConfig } from "../src/cursor.ts";
 // source text: a typo'd permission token is still valid JSON and would otherwise
 // disable the boundary silently.
 const seed = () => {
-  const dir = mkdtempSync(join(tmpdir(), "comet-cursor-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "endo-cursor-test-"));
   writeCursorConfig(4242, "s3cret", dir);
   return dir;
 };
 
 const read = (dir: string, name: string) => JSON.parse(readFileSync(join(dir, name), "utf8"));
 
-test("shell, write and read are denied and only comet's tools are allowed", () => {
+test("shell, write and read are denied and only endo's tools are allowed", () => {
   const { permissions, approvalMode } = read(seed(), "cli-config.json");
-  assert.deepEqual(permissions.allow, ["Mcp(comet:*)"]);
+  assert.deepEqual(permissions.allow, ["Mcp(endo:*)"]);
   for (const token of ["Shell(*)", "Write(*)", "Read(*)"]) {
     assert.ok(permissions.deny.includes(token), `${token} must be denied`);
   }
   assert.equal(approvalMode, "allowlist");
 });
 
-test("the isolated profile exposes comet and nothing the operator configured", () => {
+test("the isolated profile exposes endo and nothing the operator configured", () => {
   // Under the sandboxed HOME, not the config dir: cursor resolves mcp.json off
   // homedir(), so writing it beside cli-config.json leaves the operator's own
-  // servers loaded and comet unreachable. Measured, not assumed.
+  // servers loaded and endo unreachable. Measured, not assumed.
   const { mcpServers } = read(seed(), join("home", ".cursor", "mcp.json"));
-  assert.deepEqual(Object.keys(mcpServers), ["comet"]);
-  assert.match(mcpServers.comet.url, /^http:\/\/127\.0\.0\.1:4242\/mcp\?token=s3cret$/);
+  assert.deepEqual(Object.keys(mcpServers), ["endo"]);
+  assert.match(mcpServers.endo.url, /^http:\/\/127\.0\.0\.1:4242\/mcp\?token=s3cret$/);
 });
 
 test("rewriting the config keeps the session cursor-agent login stored beside it", () => {
@@ -48,7 +48,7 @@ test("a corrupt config is rewritten rather than crashing the bridge at startup",
   const dir = seed();
   writeFileSync(join(dir, "cli-config.json"), "{ not json");
   writeCursorConfig(4242, "s3cret", dir);
-  assert.deepEqual(read(dir, "cli-config.json").permissions.allow, ["Mcp(comet:*)"]);
+  assert.deepEqual(read(dir, "cli-config.json").permissions.allow, ["Mcp(endo:*)"]);
 });
 
 const args = (resume?: string) => cursorArgs("do a thing", "composer-2.5", resume);
@@ -68,7 +68,7 @@ test("a reply resumes the chat and drops the briefing already in its transcript"
 
 // Same reason as claude's boundary test: resuming restores the conversation, and
 // everything that makes the run non-interactive has to be passed again with it.
-test("resuming still auto-approves comet and trusts the workspace", () => {
+test("resuming still auto-approves endo and trusts the workspace", () => {
   for (const flag of ["--approve-mcps", "--trust"]) {
     assert.ok(args("chat-9").includes(flag), `${flag} must survive a resume`);
   }

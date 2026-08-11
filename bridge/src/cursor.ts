@@ -16,7 +16,7 @@ import { BRIEFING_CORE } from "./claude.ts";
  *
  * Outside the repo on purpose — `cursor-agent login` puts a real session in here.
  */
-export const CONFIG_DIR = join(homedir(), ".comet-cursor");
+export const CONFIG_DIR = join(homedir(), ".endo-cursor");
 
 /**
  * Isolation needs a second lever, and this one was measured rather than assumed.
@@ -24,13 +24,13 @@ export const CONFIG_DIR = join(homedir(), ".comet-cursor");
  * `CURSOR_CONFIG_DIR` covers `cli-config.json`, the session and the chat history —
  * but NOT `mcp.json`, which resolves off `homedir()`. Setting only the first and
  * calling it isolated is the trap: `mcp list` then reports the operator's own
- * servers and not comet, so the browser agent ends up with **more** reach than
+ * servers and not endo, so the browser agent ends up with **more** reach than
  * the claude path and none of the tools it actually needs. Measured 2026-08-03:
  * 27 tools across 7 servers — a scraper with its own browser automation, a recon
- * tool, and stripe/supabase/vercel plugin auth — with comet absent.
+ * tool, and stripe/supabase/vercel plugin auth — with endo absent.
  *
  * Pointing HOME at a directory the bridge owns puts `~/.cursor/mcp.json` inside
- * the sandbox, where the only server is comet.
+ * the sandbox, where the only server is endo.
  */
 export const HOME_DIR = join(CONFIG_DIR, "home");
 
@@ -41,7 +41,7 @@ export const HOME_DIR = join(CONFIG_DIR, "home");
  * shell", which is exactly the reach this removes.
  */
 const PERMISSIONS = {
-  allow: ["Mcp(comet:*)"],
+  allow: ["Mcp(endo:*)"],
   deny: ["Shell(*)", "Write(*)", "Read(*)", "WebFetch(*)"],
 };
 
@@ -96,7 +96,7 @@ export function writeCursorConfig(port: number, token: string, dir: string = CON
     JSON.stringify(
       {
         mcpServers: {
-          comet: { type: "http", url: `http://127.0.0.1:${port}/mcp?token=${encodeURIComponent(token)}` },
+          endo: { type: "http", url: `http://127.0.0.1:${port}/mcp?token=${encodeURIComponent(token)}` },
         },
       },
       null,
@@ -134,7 +134,7 @@ const BRIEFING = BRIEFING_CORE;
  * `--force`/`--yolo`, which is "run everything" and would undo the permissions.
  *
  *  - `--approve-mcps` auto-approves the MCP servers in the config directory,
- *    which after `writeCursorConfig` is only comet. Without it the run stalls on
+ *    which after `writeCursorConfig` is only endo. Without it the run stalls on
  *    an approval prompt no one is there to answer.
  *  - `--trust` accepts the workspace non-interactively. Same reason.
  *  - `--resume <chatId>` continues a previous transcript. The briefing is

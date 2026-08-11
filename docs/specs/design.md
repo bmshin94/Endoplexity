@@ -1,4 +1,4 @@
-# CometClone — agentic browser control on your own subscriptions
+# Endoplexity — agentic browser control on your own subscriptions
 
 ## Context
 
@@ -8,7 +8,7 @@
 
 **Outcome.** A Chrome side panel docked in the real, logged-in browser. Type "apply to this job with my resume"; watch it read the page, fill fields, upload the resume, page through, pause for one click before submitting. Model picker switches Claude ↔ Cursor. Zero API spend.
 
-**Repo state.** `c:\Users\venni\CometClone` is empty. Greenfield, not yet a git repo.
+**Repo state.** `c:\Users\venni\Endoplexity` is empty. Greenfield, not yet a git repo.
 
 **Decisions locked** (all four confirmed): Chrome side panel + local bridge · `chrome.debugger` CDP from the extension · auto-run with gates on irreversible actions · v1 = form-fill, then multi-tab research.
 
@@ -46,7 +46,7 @@ The bridge is the only process that talks to both sides. The extension never tal
 ## Repo layout
 
 ```
-CometClone/
+Endoplexity/
   extension/        MV3 — manifest, service worker (CDP), side panel (React)
   bridge/           Node — ws, MCP http server, cli adapters, approval gate
   shared/           TS types for events + tools, imported by both
@@ -100,7 +100,7 @@ These are the parts not to be lazy about. A local WebSocket that drives a logged
 - Bridge binds `127.0.0.1` only. Never `0.0.0.0`.
 - Random token generated on first run, stored in `chrome.storage.local`, required on WS upgrade — otherwise any web page you visit can `new WebSocket("ws://localhost:8787")` and drive your bank tab.
 - Validate `Origin` on upgrade against `chrome-extension://<id>`.
-- **Spawn the CLIs with browser tools only**: `--allowedTools "mcp__comet__*"` together with `--disallowedTools Bash Edit Write Read`. Without this, "fill out this form" has a filesystem and a shell behind it.
+- **Spawn the CLIs with browser tools only**: `--allowedTools "mcp__endo__*"` together with `--disallowedTools Bash Edit Write Read`. Without this, "fill out this form" has a filesystem and a shell behind it.
 - Resume path is an explicit allow-list of directories, never arbitrary model-chosen paths.
 - No `--dangerously-skip-permissions`.
 
@@ -113,8 +113,8 @@ Panel dropdown → bridge picks a spawn line. One adapter per CLI (~60 lines eac
 ```
 claude   → claude -p --model opus-5|sonnet-5 \
              --output-format stream-json --include-partial-messages \
-             --mcp-config '{"mcpServers":{"comet":{"type":"http","url":"http://127.0.0.1:8787/mcp"}}}' \
-             --allowedTools "mcp__comet__*" --disallowedTools Bash Edit Write Read
+             --mcp-config '{"mcpServers":{"endo":{"type":"http","url":"http://127.0.0.1:8787/mcp"}}}' \
+             --allowedTools "mcp__endo__*" --disallowedTools Bash Edit Write Read
 cursor   → cursor-agent -p --model composer-2.5|grok-4.5 --output-format stream-json
 ```
 

@@ -1,8 +1,8 @@
-// One paste, one verdict. `await comet.selftest()` in the side panel console
+// One paste, one verdict. `await endo.selftest()` in the side panel console
 // drives the whole tool-layer gate: it navigates the tab to the OOPIF fixture,
 // snapshots, fills the cross-origin form across its two steps, sets a native
 // dropdown, clicks, and checks that refs go stale. Nothing to set up and
-// nothing to eyeball. Pass a path — `comet.selftest("C:\\path\\to\\file.pdf")`
+// nothing to eyeball. Pass a path — `endo.selftest("C:\\path\\to\\file.pdf")`
 // — to also exercise the upload happy path; the panel cannot fabricate a file
 // on disk, so that one check is skipped (visibly, not silently passed) when no
 // path is given.

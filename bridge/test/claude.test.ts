@@ -13,8 +13,8 @@ const valueOf = (argv: string[], flag: string) => argv[argv.indexOf(flag) + 1];
 
 const src = readFileSync(fileURLToPath(new URL("../src/claude.ts", import.meta.url)), "utf8");
 
-test("print mode auto-approves ToolSearch, not only mcp__comet__*", () => {
-  assert.equal(valueOf(args(), "--allowedTools"), "ToolSearch,mcp__comet__*");
+test("print mode auto-approves ToolSearch, not only mcp__endo__*", () => {
+  assert.equal(valueOf(args(), "--allowedTools"), "ToolSearch,mcp__endo__*");
 });
 
 test("--allowedTools stays last — it is variadic and swallows whatever follows", () => {
@@ -41,7 +41,7 @@ test("a reply resumes exactly the session it was given", () => {
 test("resuming keeps the whole tool boundary", () => {
   const argv = args("abc-123");
   assert.equal(valueOf(argv, "--tools"), "ToolSearch");
-  assert.equal(valueOf(argv, "--allowedTools"), "ToolSearch,mcp__comet__*");
+  assert.equal(valueOf(argv, "--allowedTools"), "ToolSearch,mcp__endo__*");
   assert.equal(valueOf(argv, "--setting-sources"), "");
   assert.ok(argv.includes("--strict-mcp-config"));
 });

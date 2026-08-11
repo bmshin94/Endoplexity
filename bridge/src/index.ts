@@ -30,7 +30,7 @@ const HOST = "127.0.0.1"; // never 0.0.0.0 — this socket can drive a logged-in
 // Overridable only so a second instance can be smoke-tested without evicting the
 // one your panel is talking to. The extension always dials 8787.
 const PORT = Number(process.env.COMET_PORT ?? 8787);
-const TOKEN_PATH = fileURLToPath(new URL("../../.comet-token", import.meta.url));
+const TOKEN_PATH = fileURLToPath(new URL("../../.endo-token", import.meta.url));
 
 function loadToken(): string {
   if (existsSync(TOKEN_PATH)) return readFileSync(TOKEN_PATH, "utf8").trim();

@@ -10,11 +10,11 @@ import { fresh, pack, startNew, titleOf } from "./sessions.js";
 const BRIDGE = "ws://127.0.0.1:8787";
 
 // Tasks have buttons. The console stays exposed because it is still the only
-// way to reach the CDP layer directly (`comet.snapshot()`, `await
-// comet.selftest()`) — right-click the panel -> Inspect. `comet.task` drives the
+// way to reach the CDP layer directly (`endo.snapshot()`, `await
+// endo.selftest()`) — right-click the panel -> Inspect. `endo.task` drives the
 // same path the Run button does, so the buttons never disagree with what is
 // actually running.
-globalThis.comet = {
+globalThis.endo = {
   ...cdp,
   selftest,
   measure,
@@ -444,14 +444,14 @@ function connect() {
   // A rejected upgrade closes without ever firing onopen, which is what both a
   // stopped bridge and a refused origin look like from here — the browser hides
   // the status line from page script, so the two are told apart by reading
-  // .comet-bridge.log, which prints the origin it refused.
+  // .endo-bridge.log, which prints the origin it refused.
   ws.onclose = () => {
     if (ws !== socket) return; // superseded by a newer connect()
     stopBeat();
     setBusy(false);
     setState("down", opened ? "reconnecting…" : "bridge not running");
     if (!opened && backoff === 1000) {
-      ui.note("no bridge on 127.0.0.1:8787 — it starts at login, or double-click CometClone.vbs. If it IS running, .comet-bridge.log says which origin it refused.");
+      ui.note("no bridge on 127.0.0.1:8787 — it starts at login, or double-click Endoplexity.vbs. If it IS running, .endo-bridge.log says which origin it refused.");
     }
     scheduleRetry();
   };
@@ -474,7 +474,7 @@ function setBusy(on) {
 /** Run is a fresh conversation; Reply continues the last one. */
 async function runTask(resume = false) {
   // The console path shares this, so the guard lives here rather than on the
-  // button — otherwise comet.task() twice gets an "already running" failure back
+  // button — otherwise endo.task() twice gets an "already running" failure back
   // and that clears the busy state out from under the task still going.
   if (resume ? replyBtn.disabled : runBtn.disabled) {
     // Reply is disabled for three different reasons — say which one applies.
@@ -613,7 +613,7 @@ showMode();
 // switch, so "restore what was here" is the common path, not the rare one.
 if (Array.isArray(stored.sessions) && stored.sessions.length) sessions = stored.sessions;
 if (sessions[0].entries.length) ui.restore(sessions[0].entries.slice());
-else ui.note("type a task and hit Run — `await comet.selftest()` in this panel's console checks the tools");
+else ui.note("type a task and hit Run — `await endo.selftest()` in this panel's console checks the tools");
 drawHistory();
 
 connect();

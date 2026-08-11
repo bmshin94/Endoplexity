@@ -6,11 +6,11 @@ import { join } from "node:path";
 import { keys, resolve } from "../src/files.ts";
 
 // keys()/resolve() take the config path as their last argument precisely so
-// tests can point at a throwaway file instead of the real .comet-files.json —
+// tests can point at a throwaway file instead of the real .endo-files.json —
 // same seam cursor.ts's writeCursorConfig(dir) already uses.
-const dir = () => mkdtempSync(join(tmpdir(), "comet-files-test-"));
+const dir = () => mkdtempSync(join(tmpdir(), "endo-files-test-"));
 const configAt = (d: string, content: unknown) => {
-  const path = join(d, ".comet-files.json");
+  const path = join(d, ".endo-files.json");
   writeFileSync(path, typeof content === "string" ? content : JSON.stringify(content));
   return path;
 };
@@ -48,7 +48,7 @@ test("an unknown key lists the keys that ARE configured", () => {
 
 test("a missing config file has no keys, and resolve names the expected path and shape", () => {
   const d = dir();
-  const config = join(d, ".comet-files.json"); // never written
+  const config = join(d, ".endo-files.json"); // never written
 
   assert.deepEqual(keys(config), []);
   throwsWithMessage(() => resolve("resume", config), "no files configured", config, "resume");

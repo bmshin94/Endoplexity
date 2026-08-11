@@ -90,7 +90,7 @@ export async function relay(name: string, args: Record<string, unknown>) {
 }
 
 function build() {
-  const server = new McpServer({ name: "comet", version: "0.1.0" });
+  const server = new McpServer({ name: "endo", version: "0.1.0" });
 
   server.registerTool(
     "snapshot",
@@ -161,7 +161,7 @@ function build() {
   const fileKeys = keys();
   const keysNote = fileKeys.length
     ? `Configured keys: ${fileKeys.join(", ")}.`
-    : "No files are configured — tell the user to add one to .comet-files.json.";
+    : "No files are configured — tell the user to add one to .endo-files.json.";
 
   server.registerTool(
     "upload",

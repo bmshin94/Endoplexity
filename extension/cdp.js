@@ -38,7 +38,7 @@ function reset() {
 // found and can be reported as stale rather than as unknown.
 function invalidate(why) {
   generation++;
-  console.log(`comet: refs invalidated (${why})`);
+  console.log(`endo: refs invalidated (${why})`);
 }
 
 function setupSession(sessionId) {
@@ -52,7 +52,7 @@ function setupSession(sessionId) {
     autoAttach: true,
     waitForDebuggerOnStart: false,
     flatten: true,
-  }).catch((err) => console.warn(`comet: setAutoAttach failed on ${sessionId || "main"}`, err));
+  }).catch((err) => console.warn(`endo: setAutoAttach failed on ${sessionId || "main"}`, err));
   send(sessionId, "Page.enable").catch(() => {});
 }
 
@@ -66,7 +66,7 @@ function onEvent(source, method, params) {
     // "(frame unavailable)" line in every snapshot of any real site.
     if (targetInfo.type !== "iframe") return;
     sessions.set(sessionId, { tag: `f${++frameSeq}`, url: targetInfo.url });
-    console.log(`comet: frame f${frameSeq} attached — ${targetInfo.url}`);
+    console.log(`endo: frame f${frameSeq} attached — ${targetInfo.url}`);
     setupSession(sessionId);
   }
 
@@ -138,7 +138,7 @@ export async function attach(target) {
   setupSession(MAIN);
 
   const tab = await chrome.tabs.get(id);
-  console.log(`comet: attached to tab ${id} — ${tab.url}`);
+  console.log(`endo: attached to tab ${id} — ${tab.url}`);
   return id;
 }
 
@@ -173,7 +173,7 @@ export async function navigate(url) {
   const ready = loaded(tabId);
   await chrome.tabs.update(tabId, { url });
   await ready;
-  console.log(`comet: navigated to ${url}`);
+  console.log(`endo: navigated to ${url}`);
   return `navigated to ${url}`;
 }
 
@@ -208,7 +208,7 @@ export async function go(direction, options) {
   const ready = loaded(tabId, 10_000);
   await send(MAIN, "Page.navigateToHistoryEntry", { entryId: target.id });
   await ready;
-  console.log(`comet: went ${direction} to ${target.url}`);
+  console.log(`endo: went ${direction} to ${target.url}`);
   return snapshot(options);
 }
 
@@ -264,7 +264,7 @@ export async function useTab(id, url, options) {
   // A freshly created tab is usually still loading; settle() waits on exactly
   // that and needs no separate path.
   await settle();
-  console.log(`comet: using tab ${target}`);
+  console.log(`endo: using tab ${target}`);
   return snapshot(options);
 }
 
@@ -290,7 +290,7 @@ export async function detach() {
   const id = tabId;
   reset();
   await chrome.debugger.detach({ tabId: id });
-  console.log(`comet: detached from tab ${id}`);
+  console.log(`endo: detached from tab ${id}`);
 }
 
 /**
@@ -384,7 +384,7 @@ export async function click(ref, options) {
   await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mouseMoved", buttons: 0 });
   await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mousePressed", buttons: 1 });
   await send(sessionId, "Input.dispatchMouseEvent", { ...base, type: "mouseReleased", buttons: 0 });
-  console.log(`comet: click ${ref} at ${Math.round(x)},${Math.round(y)}`);
+  console.log(`endo: click ${ref} at ${Math.round(x)},${Math.round(y)}`);
   await settle();
   return snapshot(options);
 }
@@ -401,7 +401,7 @@ export async function hover(ref, options) {
   const { sessionId } = resolve(ref);
   const { x, y } = await centreOf(ref);
   await send(sessionId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
-  console.log(`comet: hover ${ref} at ${Math.round(x)},${Math.round(y)}`);
+  console.log(`endo: hover ${ref} at ${Math.round(x)},${Math.round(y)}`);
   await settle();
   return snapshot(options);
 }
@@ -438,7 +438,7 @@ export async function scroll(direction = "down", ref, options) {
     button: "none",
     buttons: 0,
   });
-  console.log(`comet: scroll ${direction} ${deltaY}px at ${Math.round(at.x)},${Math.round(at.y)}`);
+  console.log(`endo: scroll ${direction} ${deltaY}px at ${Math.round(at.x)},${Math.round(at.y)}`);
   await settle();
   return snapshot(options);
 }
@@ -461,7 +461,7 @@ export async function type(ref, text) {
     await send(MAIN, "Input.dispatchKeyEvent", { ...base, type: "keyDown" });
     await send(MAIN, "Input.dispatchKeyEvent", { ...base, type: "keyUp" });
   }
-  console.log(`comet: typed ${text.length} chars into ${ref}`);
+  console.log(`endo: typed ${text.length} chars into ${ref}`);
 }
 
 const KEYS = {
@@ -481,7 +481,7 @@ export async function key(name, options) {
   const { text, ...rest } = spec; // text belongs on keyDown only, or Enter types twice
   await send(MAIN, "Input.dispatchKeyEvent", { ...rest, text, type: "keyDown" });
   await send(MAIN, "Input.dispatchKeyEvent", { ...rest, type: "keyUp" });
-  console.log(`comet: key ${name}`);
+  console.log(`endo: key ${name}`);
   await settle();
   return snapshot(options);
 }
@@ -514,7 +514,7 @@ export async function upload(path, match, options) {
       }
     } catch (err) {
       // Frames come and go; one dead frame must not kill the whole operation.
-      console.warn(`comet: upload scan skipped frame ${frame.tag}`, err);
+      console.warn(`endo: upload scan skipped frame ${frame.tag}`, err);
     }
   }
 
@@ -534,7 +534,7 @@ export async function upload(path, match, options) {
 
   const [chosen, ...rest] = pool;
   await send(chosen.sessionId, "DOM.setFileInputFiles", { files: [path], nodeId: chosen.nodeId });
-  console.log(`comet: upload "${path}" -> input "${chosen.label}"`);
+  console.log(`endo: upload "${path}" -> input "${chosen.label}"`);
   await settle();
   const page = await snapshot(options);
   // "succeeded" said plainly, because the page below often contradicts it: a
@@ -617,7 +617,7 @@ export async function select(ref, value, options) {
   if (typeof outcome === "string" && outcome.startsWith("error:")) {
     throw new Error(outcome.slice("error: ".length));
   }
-  console.log(`comet: select ${ref} -> "${outcome}"`);
+  console.log(`endo: select ${ref} -> "${outcome}"`);
   await settle();
   return snapshot(options);
 }
@@ -633,6 +633,6 @@ export const state = () => ({
 chrome.debugger.onEvent.addListener(onEvent);
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId !== tabId) return;
-  console.warn(`comet: debugger detached (${reason})`);
+  console.warn(`endo: debugger detached (${reason})`);
   reset();
 });

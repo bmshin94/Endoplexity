@@ -16,7 +16,7 @@ it on the right page."* Everything else is secondary to that sentence.
 
 ## Product Purpose
 
-CometClone replicates Perplexity Comet's browser control, driven by existing Claude Max and
+Endoplexity replicates Perplexity Comet's browser control, driven by existing Claude Max and
 Cursor subscriptions instead of metered API keys. The extension never talks to a model, the
 CLI never talks to Chrome; the panel is the only surface either one has.
 

@@ -1,7 +1,7 @@
 # Verifying it by hand
 
 Type a task in the box and hit **Run**; **Stop** kills the agent; **Reply**
-(ctrl+Enter) answers it without starting over. The `comet` object stays on the
+(ctrl+Enter) answers it without starting over. The `endo` object stays on the
 panel's own devtools console because that is still the only way to reach the CDP
 layer directly.
 
@@ -19,7 +19,7 @@ the worst bug this project has had was a form filled perfectly in a tab nobody
 was watching, with every tool returning success.
 
 Everything the bridge sends is still kept verbatim under **Raw log** at the
-bottom, including messages the conversation drops. `comet.log()` returns it as a
+bottom, including messages the conversation drops. `endo.log()` returns it as a
 string, which is what to paste into a bug report.
 
 ## How much it may do without asking
@@ -55,23 +55,23 @@ Re-running `npm run setup` overwrites the `.vbs`; that's expected, not a warning
 sign.
 
 The autostarted bridge is silent by design, so its output goes to
-`.comet-bridge.log` at the repo root — that's the first place to look when
+`.endo-bridge.log` at the repo root — that's the first place to look when
 something isn't working.
 
 `git pull` does not restart the bridge — the old process keeps running on the old
 code until something kills it. Kill `node` in Task Manager, then double-click
-`CometClone.vbs` (Startup folder, or the repo root if Setup fell back there) to
-bring it back, or just log out and in. `CometClone.vbs` is also the manual start:
+`Endoplexity.vbs` (Startup folder, or the repo root if Setup fell back there) to
+bring it back, or just log out and in. `Endoplexity.vbs` is also the manual start:
 double-click it any time instead of running `npm start` in a terminal.
 
 ## The check
 
-Reload the CometClone card on `chrome://extensions` (the bridge is already
+Reload the Endoplexity card on `chrome://extensions` (the bridge is already
 running — see Setup above), open the side panel, right-click inside it →
 **Inspect**, and paste:
 
 ```js
-await comet.selftest(); await comet.measure()
+await endo.selftest(); await endo.measure()
 ```
 
 `selftest()` is the tool gate; `measure()` is the Phase 3 one — it snapshots a
@@ -98,7 +98,7 @@ file on disk, so without one that single check prints as `SKIP`, distinct from
 and not counted against PASS/FAIL:
 
 ```js
-await comet.selftest("C:\\path\\to\\some.pdf")
+await endo.selftest("C:\\path\\to\\some.pdf")
 ```
 
 The fixture (`bridge/test/fixtures/`) serves its form from `localhost` while the
@@ -112,21 +112,21 @@ attach at a time. The panel's inspector is a different target, so it is fine.
 ## Driving it by hand
 
 ```js
-await comet.attach();                          // a drivable tab, or attach(tabId)
-comet.state();                                 // attached frames + live ref count
-console.log(await comet.snapshot());           // @f0e1 [button] "…", refs per frame
-console.log(await comet.snapshot({full:true})); // …plus body text
-await comet.type("@f1e1", "Ada");
-console.log(await comet.click("@f1e4"));       // returns the page it produced
-console.log(await comet.key("Enter"));         // so does this
+await endo.attach();                          // a drivable tab, or attach(tabId)
+endo.state();                                 // attached frames + live ref count
+console.log(await endo.snapshot());           // @f0e1 [button] "…", refs per frame
+console.log(await endo.snapshot({full:true})); // …plus body text
+await endo.type("@f1e1", "Ada");
+console.log(await endo.click("@f1e4"));       // returns the page it produced
+console.log(await endo.key("Enter"));         // so does this
 
-console.log(await comet.hover("@f0e2"));       // hover-open menus
-console.log(await comet.scroll("down"));       // a wheel, so lazy content loads
-console.log(await comet.scroll("down","@f0e9")); // …inside that ref's scroller
-console.log(await comet.go("back"));           // and go("forward")
-console.log(await comet.tabs());               // * marks the attached one
-console.log(await comet.useTab(null, "https://example.com")); // or useTab(id)
-console.log(await comet.snapshot({from: 300})); // read past the 300-line cap
+console.log(await endo.hover("@f0e2"));       // hover-open menus
+console.log(await endo.scroll("down"));       // a wheel, so lazy content loads
+console.log(await endo.scroll("down","@f0e9")); // …inside that ref's scroller
+console.log(await endo.go("back"));           // and go("forward")
+console.log(await endo.tabs());               // * marks the attached one
+console.log(await endo.useTab(null, "https://example.com")); // or useTab(id)
+console.log(await endo.snapshot({from: 300})); // read past the 300-line cap
 ```
 
 `scroll` is not how you reach something below the fold — the accessibility tree
@@ -155,14 +155,14 @@ pasted into bug reports.
 The resume itself uploads by KEY, never a path — the model only ever sees a
 name like `resume` in the tool description, never a filesystem path (it runs in
 the browser process, which can read anything you can). A repo-root
-`.comet-files.json` is the one place a key becomes an absolute path, and it's
+`.endo-files.json` is the one place a key becomes an absolute path, and it's
 a human-edited allow-list, never anything the model writes:
 
 ```json
 { "resume": "C:\\Users\\you\\Documents\\resume.pdf" }
 ```
 
-Copy `.comet-files.example.json` to get started. Not committed — it points at a
+Copy `.endo-files.example.json` to get started. Not committed — it points at a
 real path on your machine.
 
 ## On a real job site

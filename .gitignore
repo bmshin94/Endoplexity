@@ -1,6 +1,6 @@
 node_modules/
-.comet-token
-.comet-mcp.json
-.comet-files.json
+.endo-token
+.endo-mcp.json
+.endo-files.json
 *.log
 dist/

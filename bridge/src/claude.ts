@@ -4,7 +4,7 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-const CONFIG_PATH = fileURLToPath(new URL("../../.comet-mcp.json", import.meta.url));
+const CONFIG_PATH = fileURLToPath(new URL("../../.endo-mcp.json", import.meta.url));
 
 /**
  * Habits real runs paid for, corrected up front. Each costs ~20 tokens here —
@@ -47,7 +47,7 @@ export const BRIEFING_CORE = [
 const BRIEFING = [
   BRIEFING_CORE,
   "Load every browser tool in ONE ToolSearch call, query:",
-  "select:mcp__comet__snapshot,mcp__comet__navigate,mcp__comet__click,mcp__comet__type,mcp__comet__key,mcp__comet__upload,mcp__comet__select",
+  "select:mcp__endo__snapshot,mcp__endo__navigate,mcp__endo__click,mcp__endo__type,mcp__endo__key,mcp__endo__upload,mcp__endo__select",
 ].join(" ");
 
 /**
@@ -58,7 +58,7 @@ const BRIEFING = [
 export function writeMcpConfig(port: number, token: string): string {
   const config = {
     mcpServers: {
-      comet: { type: "http", url: `http://127.0.0.1:${port}/mcp?token=${encodeURIComponent(token)}` },
+      endo: { type: "http", url: `http://127.0.0.1:${port}/mcp?token=${encodeURIComponent(token)}` },
     },
   };
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
@@ -82,9 +82,9 @@ export function writeMcpConfig(port: number, token: string): string {
  *    allowlist cannot rot as new tools ship.
  *    ToolSearch has to stay: MCP tools arrive deferred, and it is the only way
  *    to reach them. Measured — with `--tools ""` the agent never sees a single
- *    comet tool. It only fetches schemas, so it grants no new reach itself.
- *  - `--allowedTools "ToolSearch,mcp__comet__*"` auto-approves both. Print mode
- *    with only `mcp__comet__*` leaves ToolSearch visible but uncallable — the
+ *    endo tool. It only fetches schemas, so it grants no new reach itself.
+ *  - `--allowedTools "ToolSearch,mcp__endo__*"` auto-approves both. Print mode
+ *    with only `mcp__endo__*` leaves ToolSearch visible but uncallable — the
  *    model then pastes fake `<function_calls>` XML as text and exits in one
  *    turn. Measured 2026-08-01 against claude 2.1.170.
  *  - `--strict-mcp-config` keeps the operator's own MCP servers out of reach.
@@ -125,7 +125,7 @@ export const claudeArgs = (prompt: string, model: string, resume?: string): stri
   "ToolSearch",
   // Variadic, so it stays last or it swallows whatever follows.
   "--allowedTools",
-  "ToolSearch,mcp__comet__*",
+  "ToolSearch,mcp__endo__*",
 ];
 
 /**

@@ -11,9 +11,9 @@ import { fileURLToPath } from "node:url";
  * key becomes a path, and the map is a fixed allow-list the human edits on
  * disk, never anything the model says.
  *
- * Sibling of .comet-token — see index.ts's TOKEN_PATH for the same pattern.
+ * Sibling of .endo-token — see index.ts's TOKEN_PATH for the same pattern.
  */
-const CONFIG_PATH = fileURLToPath(new URL("../../.comet-files.json", import.meta.url));
+const CONFIG_PATH = fileURLToPath(new URL("../../.endo-files.json", import.meta.url));
 
 const SHAPE = '{ "resume": "C:\\\\Users\\\\you\\\\Documents\\\\resume.pdf" }';
 

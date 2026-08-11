@@ -51,7 +51,7 @@ export const ALLOWED_ORIGIN = `chrome-extension://${extensionIdFromManifest(MANI
  *
  * What still holds: a website cannot open this socket, because it cannot
  * present a chrome-extension origin. A local process running as you can forge
- * one — and could always read .comet-token anyway, so nothing was lost there.
+ * one — and could always read .endo-token anyway, so nothing was lost there.
  *
  * The token is NOT gone: it is still the whole boundary on /mcp, where it is
  * genuinely load-bearing because a CLI sends no Origin to check.
