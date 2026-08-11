@@ -1,0 +1,4 @@
+# hello.pdf is a hand-built PDF whose xref table stores the BYTE OFFSET of every
+# object. Git's default LF -> CRLF conversion on Windows shifts every one of them
+# and the file stops parsing — so the fixture must round-trip byte for byte.
+*.pdf binary

@@ -23,13 +23,18 @@ has the other's credentials.
 ```
 
 The panel owns the CDP connection, not the service worker — which sidesteps MV3
-idle teardown. The bridge exposes 13 browser tools over MCP and is where the
+idle teardown. The bridge exposes 14 browser tools over MCP and is where the
 safety policy lives. Because it drives `chrome.debugger` from inside your own
 browser, it works on your already-logged-in profile: no separate automation
 browser, no re-authenticating to every site.
 
-**Tools:** `snapshot` `navigate` `click` `type` `key` `upload` `select` `scroll`
-`hover` `back` `forward` `tabs` `use_tab`
+**Tools:** `snapshot` `navigate` `click` `type` `key` `upload` `read_file`
+`select` `scroll` `hover` `back` `forward` `tabs` `use_tab`
+
+`read_file` reads a configured document as text — pdf, docx, xlsx, pptx, csv,
+json, markdown, or any text file — so the agent can answer questions about an
+attachment rather than only pushing it at a form field. Like `upload` it takes a
+key from `.endo-files.json`, never a path.
 
 Pages are sent to the model as an accessibility-tree snapshot, not raw HTML, and
 actions return the page they produced — so acting and re-reading are one turn

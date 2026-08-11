@@ -153,21 +153,41 @@ its output is `.endo-bridge.log`; `Endoplexity.vbs` is the manual start. Panel c
   LinkedIn post, a demo shot list, a repo-settings checklist). **106/106 tests still pass**, and
   the old `CometClone.vbs` was deleted from the Startup folder so login does not fire two bridges.
 
-## Current phase: 11 — the three queued features
+- **P11a — the agent can READ a file, 13 tools → 14 (code landed 2026-08-10, live verification
+  OWED).** First of phase 11's three, picked because it was the only one not blocked on a live
+  run. `read_file` takes a configured KEY through the same `files.ts` `resolve()` `upload` uses,
+  so the model still never sees a path, and it does **not** go through `relay()`/the gate — it
+  never touches Chrome, and reading a file the human allow-listed is not irreversible.
+  `docs.ts` is DOM-free and dependency-free except for the one place a dependency was the right
+  call: **pdf**. docx/xlsx/pptx are zips of XML, so a ~35-line central-directory walk plus
+  `node:zlib` covers them; PDF text extraction is a real parser and `unpdf` (**zero transitive
+  deps**, imported lazily so a run that reads nothing pays no startup) does it. Anything else
+  is **sniffed, not extension-matched** — every source file, .csv, .env, .ini reads as text
+  without this module learning a language list; images and the old `.doc`/`.xls` binaries are
+  refused with a message naming the fix. Returns cap at 8,000 chars and page with `from:`,
+  same reasoning as `snapshot`'s line cap. **Verified end to end over `/mcp`**: 14 tools list,
+  and a real call on the configured resume returned 4,891 chars, `isError=false`, `from: 10`
+  returning 4,881; a bogus key returns a readable `isError`. **106 → 126 tests.**
+  - **Fixed on the way, a real P7 defect:** claude's briefing told it to load "every browser
+    tool" in one ToolSearch call and then named **7 of 13** — scroll, hover, back, forward,
+    tabs and use_tab each cost a second round trip, which is a whole turn, and every turn
+    re-sends the ones before it. Now built from an exported `PRELOAD` list, and
+    `claude.test.ts` pins it against mcp.ts's own `registerTool` calls so it cannot drift
+    again. **This changes claude's per-run cost and is a live candidate for feature 3's
+    "kinda ass with claude" verdict** — do not diagnose that without accounting for it.
+  - **Accepted, deliberate widening:** the agent can now read a configured file's *contents*
+    and could type them into a page. `upload` never exposed content. The allow-list is still
+    the whole boundary and that is the point of the feature — but it is a real change in what
+    a compromised or confused run can leak, and it is not a regression to be "fixed" later.
+
+## Current phase: 11 — two features left
 
 **Start here in a fresh session.** P10 (launch) ran early by accident — it was meant to be a
 future phase — and its terminal-side work is done and committed, so the remaining launch items
 are parked below as chores, not as a phase. These three are the actual work, in the order they
 should probably be taken:
 
-1. **File input the agent can READ** (pdf, docx, xlsx). Today `upload` is opaque: it pushes a
-   file at a form field and the agent never sees the contents. The lazy first question is
-   whether this is a new MCP tool (`read_file`, resolving a configured KEY exactly as `upload`
-   does — `files.ts` already has the allowlist, and the security invariant that the model never
-   sees a path must hold) or a panel-side extraction. **Expect a dependency argument:** docx and
-   xlsx are zips of XML and are reachable with `node:zlib` plus ~60 lines, but PDF text
-   extraction is a real parser and is the one place "add a dep" is probably right. Decide that
-   before writing anything.
+1. ~~File input the agent can READ~~ — **done, see P11a above.**
 2. **Token efficiency, second pass.** The user's words are "this is too consuming". P3 measured
    the 5-tool world; the bill now carries the 13-tool schema (~1,829 tokens) and `full:`
    returns. Needs a live measurement run to mean anything — and four of those have died in a
@@ -210,15 +230,14 @@ harness; it was scratch, and rebuilding it is a 90-line http server plus a swapp
 clause ("never answer from memory") actually fixes the zero-tool research answer. If it does
 not, the deferred-MCP-tools hypothesis survives and earns real budget.
 
-**Queued behind the launch, set by the user (2026-08-10)** — after a run where "grok 4.5 works
-like butter" and the product is finally usable, these four are what stand between it and an
-experience. **Sessions + history is done (P9c above).** The three left: **file input the agent
-understands** (pdf, docx, xlsx — not just `upload`'s opaque file-to-a-form-field path; the
-agent must be able to *read* an attachment); **token efficiency** — the user's words are "this
-is too consuming", so P3's measurement work gets a second pass with the 13-tool schema and
-`full:` returns now in the bill; and **the claude path brought up to the cursor path's
-quality** — "kinda ass with claude, really good with cursor" is the standing verdict, and C8
-was going to test cursor, not claude.
+The four the user queued on 2026-08-10, after the run where "grok 4.5 works like butter":
+sessions + history (**P9c**), file input the agent understands (**P11a**), and the two above.
+
+**Owed for P11a:** everything live. `read_file` has never run inside a real task — only over
+`/mcp` directly. Worth one run that reads the resume and answers a question about it, and one
+that pages a document past 8,000 chars. The **cap is a guess**, exactly like P9c's storage cap:
+8,000 chars is ~2k tokens by arithmetic, not by measurement, and the resume that motivated the
+feature came in at 4,891 so the paging path has never been exercised on a real document.
 
 **Owed for P9c:** the storage cap is a guess, not a measurement — pack() clips a field at
 2,000 chars and keeps 400 entries, but nobody has watched what a real 10-turn run with `full:`

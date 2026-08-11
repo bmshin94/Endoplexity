@@ -37,17 +37,45 @@ export const BRIEFING_CORE = [
   "The task names the page the user is already looking at — act on that page rather than asking which page they mean.",
   "navigate, click, key, upload and select return the page they produced — never call snapshot after them.",
   "Refs like @f1e7 are only valid on the most recent page you were given.",
-  "You cannot be sent files: upload attaches one the user configured by key, so never ask for a file or a path.",
+  "You cannot be sent files, but the user has configured some by key: read_file reads one, upload attaches one to a form. Use a key, and never ask for a file or a path.",
   "If an action did not do what you expected, take a different route rather than repeating it.",
   "Never answer from memory: every fact and every URL you report must come from a page you loaded in this run.",
 ].join(" ");
+
+/**
+ * Every tool mcp.ts registers, named here because the briefing is a string the
+ * model reads rather than anything the server can be asked for.
+ *
+ * It went stale once already: phase 7 took the tool count 7 -> 13 and left this
+ * list at 7, so scroll, hover, back, forward, tabs and use_tab each cost a
+ * second ToolSearch round trip — a whole turn, which re-sends every turn before
+ * it. Paying ~140 tokens of schema up front for a tool that may go unused is
+ * strictly cheaper than that. claude.test.ts pins this against mcp.ts's own
+ * registerTool calls so the next tool added cannot repeat it.
+ */
+export const PRELOAD = [
+  "snapshot",
+  "navigate",
+  "click",
+  "type",
+  "key",
+  "upload",
+  "read_file",
+  "select",
+  "scroll",
+  "hover",
+  "back",
+  "forward",
+  "tabs",
+  "use_tab",
+];
 
 // Habit 1 is claude-only — cursor hands MCP tools to the model directly, with no
 // deferred-tool step to get wrong.
 const BRIEFING = [
   BRIEFING_CORE,
   "Load every browser tool in ONE ToolSearch call, query:",
-  "select:mcp__endo__snapshot,mcp__endo__navigate,mcp__endo__click,mcp__endo__type,mcp__endo__key,mcp__endo__upload,mcp__endo__select",
+  `select:${PRELOAD.map((name) => `mcp__endo__${name}`).join(",")}`,
 ].join(" ");
 
 /**

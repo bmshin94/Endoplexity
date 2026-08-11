@@ -5,6 +5,7 @@ import { z } from "zod";
 import { callPanel, askPanel } from "./relay.ts";
 import { check, remember, rememberApproval, resetApprovals, labelFor, type Mode } from "./gate.ts";
 import { keys, resolve } from "./files.ts";
+import { extract, page } from "./docs.ts";
 
 /**
  * The browser tools, written once. Both CLIs speak MCP, so Phase 5 gets these
@@ -21,6 +22,12 @@ const KEYS = ["Enter", "Tab", "Escape", "Backspace", "ArrowDown", "ArrowUp"] as 
 // stale refs and slider-shaped errors fine before this, so it needs the same
 // kind of plain-English steer here, telling it to stop rather than route around.
 const DENIED = "blocked — the human denied this action. Do not retry it; stop and report what you were about to do.";
+
+// A document arrives in one piece up to here, then pages with `from:` — see
+// page() in docs.ts for why it is capped at all. ~8k characters is roughly 2k
+// tokens and lets an ordinary CV or letter land whole, so the common case
+// never costs a second call.
+const READ_CAP = 8000;
 
 // Shared by the two tools that ARRIVE somewhere. Reading a page is a different
 // job from acting on one, and it is the job the arriving tool can do for free:
@@ -185,6 +192,38 @@ function build() {
         // synchronously on a bad/missing key, before relay() ever runs — this
         // catch is what turns that into an isError result instead of an MCP
         // protocol error the model cannot see or recover from.
+        return { content: [{ type: "text" as const, text: `error: ${(err as Error).message}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "read_file",
+    {
+      description:
+        `Read a configured document as text — pdf, docx, xlsx, pptx, csv, json, markdown or any text file. ` +
+        `Takes a KEY, never a path, exactly like upload. ${keysNote} ` +
+        `This is how you learn what is IN a file; upload attaches one to a form without ever reading it.`,
+      inputSchema: {
+        file: z.string().describe('A configured key, e.g. "resume" — not a file path'),
+        from: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Start reading at this character, to continue past a document that said it had more."),
+      },
+    },
+    async ({ file, from }) => {
+      try {
+        // Deliberately not through relay(): this never touches Chrome, so
+        // there is no page to return and nothing for the gate to weigh —
+        // reading a file the human put in the allow-list themselves is not an
+        // irreversible act. resolve() is the whole security boundary, and it
+        // is the same one upload goes through.
+        const text = page(await extract(resolve(file)), from, READ_CAP, file);
+        return { content: [{ type: "text" as const, text }] };
+      } catch (err) {
         return { content: [{ type: "text" as const, text: `error: ${(err as Error).message}` }], isError: true };
       }
     },
