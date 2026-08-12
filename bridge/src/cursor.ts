@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { BRIEFING_CORE } from "./claude.ts";
+import { BRIEFING_CORE, PRELOAD } from "./claude.ts";
 
 /**
  * A bridge-owned Cursor profile, deliberately not `~/.cursor`.
@@ -122,10 +122,34 @@ export function writeCursorConfig(port: number, token: string, dir: string = CON
   return dir;
 }
 
-// cursor-agent has no `--append-system-prompt`, so the briefing rides in front of
-// the prompt instead. No ToolSearch line: that is a claude-side concept, and
-// cursor hands MCP tools to the model directly.
-const BRIEFING = BRIEFING_CORE;
+/**
+ * cursor-agent has no `--append-system-prompt`, so the briefing rides in front
+ * of the prompt instead.
+ *
+ * This used to stop at BRIEFING_CORE, on the stated belief that cursor "hands
+ * MCP tools to the model directly" and that preloading was a claude-side
+ * concern. Measured 2026-08-12 and false in both halves: cursor's tools are
+ * deferred too, and it reaches them with `getMcpTools` in `mode: "single_tool"`
+ * — one schema per call, each in a turn of its own, immediately before the first
+ * use of that tool. On a nine-turn Hacker News run, FOUR of the nine turns
+ * bought nothing but a schema (navigate, click, tabs, snapshot in that order),
+ * and every turn re-sends the ones before it.
+ *
+ * That is the same defect P11a found on the claude side, so it gets the same
+ * correction, phrased for cursor's own tool rather than ToolSearch's `select:`.
+ * The names come from PRELOAD, which is the one list already pinned against
+ * mcp.ts's registerTool calls — adding a tool must not leave this stale twice.
+ *
+ * NOT yet verified against a live run: the panel dropped before the after-number
+ * could be taken, and cursor's bulk-fetch affordance is server-side, so whether
+ * `getMcpTools` will take them all at once is the model's call, not ours. The
+ * names alone are worth the ~30 tokens — knowing what exists is half of it.
+ */
+const BRIEFING = [
+  BRIEFING_CORE,
+  `All ${PRELOAD.length} browser tools live on the MCP server "endo": ${PRELOAD.join(", ")}.`,
+  "Load their schemas in ONE call before your first action, not one tool at a time.",
+].join(" ");
 
 /**
  * The args for a restricted `cursor-agent -p`, exported so a test can assert on

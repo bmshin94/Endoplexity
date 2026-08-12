@@ -228,6 +228,28 @@ async function runChecks(check, skip, filePath) {
     page.includes("Apply for this job") ? "went back to the host page instead" : null,
   );
 
+  // Clicking a LINK, which nothing above ever did: every other click check here
+  // drives a button that rewrites the page in place, and `back`/`forward` go
+  // through Page.navigateToHistoryEntry rather than the mouse. So "click" was
+  // only ever proved on the half of the web that does not navigate. Measured
+  // 2026-08-12 on Hacker News: both CLIs clicked a correctly-serialised
+  // `[link] "200 comments"` and were handed the front page back, and neither
+  // 27/27 nor the unit suite had anything to say about it.
+  await cdp.navigate(FIXTURE);
+  page = await cdp.snapshot();
+  const away = refFor(page, "link", "Open the form on its own");
+  check("the fixture's link is in the snapshot", away ? null : "no link found to click");
+  if (away) {
+    page = await cdp.click(away);
+    // The host page's heading is the discriminator the back/forward checks
+    // already use: gone means the tab really moved.
+    check(
+      "clicking a link navigates the tab",
+      page.includes("Apply for this job") ? "still on the host page after the click" : null,
+    );
+    await cdp.navigate(FIXTURE);
+  }
+
   const home = cdp.state().tabId;
   check("tabs stars the attached tab", new RegExp(`\\* id ${home} `).test(await cdp.tabs()) ? null : "not starred");
 

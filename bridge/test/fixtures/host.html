@@ -39,6 +39,14 @@
 
     <button id="decoy">Decoy button in the main frame</button>
 
+    <!-- A LINK, not a button. Every other click in the self-test drives a button
+         that mutates this page in place, so none of them ever proved that
+         clicking an <a href> moves the tab — the commonest click on the web, and
+         the one every research task is built out of. Measured 2026-08-12 on real
+         pages: both CLIs clicked a correctly-labelled link and got the same page
+         back, and nothing in 27/27 or the unit suite noticed. -->
+    <p><a href="/fixtures/form.html">Open the form on its own</a></p>
+
     <!-- The real reason a scroll tool exists. This button is not in the DOM at
          all until the page has been scrolled, so it is absent from the tree no
          matter how far down it would sit — which is what an infinite feed or a

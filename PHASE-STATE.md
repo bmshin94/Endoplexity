@@ -16,6 +16,9 @@ Run; **Reply** (ctrl+Enter) continues the last conversation. The bridge is invis
 output is `.endo-bridge.log`; `Endoplexity.vbs` is the manual start. Panel console:
 `endo.selftest("C:\path\to\file.pdf")`, `endo.measure()`, `endo.log()`. File keys live in
 `.endo-files.json` (copy `.endo-files.example.json`). See `docs/handrun.md`.
+**Measuring:** `npm run bench -- <model> <label> "<task>"` runs a real task through the real
+adapter against the live browser and prints turns / tokens / cost / tool sequence. Needs a
+connected panel — and a **reloaded** one, see the gotchas.
 
 **Reading order:** a fresh session needs only "Next session — start here" below (~70 lines).
 Everything after `## Done` is reference — history, settled decisions, and the gotcha ledger —
@@ -26,18 +29,40 @@ failed run to learn, and trimming them to hit a line count would trade money for
 
 ## Next session — start here
 
-**Everything left in phase 11 is blocked on ONE live run, and it is the same run for both
-features.** They were queued as separate work and they are not: a single task executed once on
-claude and once on cursor, with turns / tokens / cost read off the panel's own chip, produces
-the number feature 2 wants *and* the comparison feature 3 needs. Nothing else can be built from
-a terminal. Do the run first, then decide what code follows.
+**The run that blocked this phase is no longer blocked, and it is no longer manual.** "Nothing
+else can be built from a terminal" was wrong: the bridge's own `/mcp` endpoint answers from a
+terminal, and the CLI adapters are plain functions, so `npm run bench -- <model> <label> "<task>"`
+spawns the production adapter against the live browser and prints turns / tokens / cost / the
+whole tool sequence. It needs a connected side panel and nothing else. Four measurements died
+before it existed; none of the ways they died is reachable through it.
 
-**The claude baseline moved on 2026-08-10 (`f8cc273`) and no run has used it yet.** P11a fixed a
-P7 defect where claude's briefing preloaded **7 of 13** tools, so scroll/hover/back/forward/
-tabs/use_tab each cost a second ToolSearch round trip — a whole turn, and every turn re-sends
-the ones before it. **Every claude number recorded before that commit is a measurement of the
-defect.** "Kinda ass with claude" may already be partly fixed. Measure before diagnosing, and do
-not start feature 3 by rewriting prompts.
+**Feature 3 was measured on 2026-08-12 and the premise inverted — read this before touching a
+prompt.** Same task, byte-identical prompt, same browser, back to back:
+
+| | cursor-grok-4.5-medium | claude sonnet |
+|---|---|---|
+| wall | 64.6s | 91.6s |
+| turns that called tools | 9 | 8 |
+| …of them **pure tool discovery** | **4** | **1** |
+| output tokens | 1,617 | 3,208 |
+| cost | not reported (subscription) | $0.2052 |
+| answer vs HN's API | correct | correct, fuller |
+
+**claude's deferred-tool defect is gone and cursor has one.** claude makes exactly one
+`ToolSearch` carrying the whole `select:` list and gets all 14 tools — P11a (`f8cc273`) confirmed
+live, first time. cursor reaches its tools with `getMcpTools` in **`mode: "single_tool"`** — one
+schema per call, each in a turn of its own, immediately before first use of navigate, click,
+tabs and snapshot. Four of its nine turns bought nothing. **"Kinda ass with claude" did not
+reproduce**: both answers were right, claude's was more complete. It is slower and twice as
+chatty, not worse. Do not rewrite the claude briefing to fix a defect that is no longer there.
+
+**Every live number taken before now measured a stale extension.** Chrome caches an unpacked
+extension's files until you reload it at `chrome://extensions`, and a panel remount re-runs the
+*cached* code — so editing files and reopening the panel changes nothing. The panel that served
+this measurement was the **pre-P11e build**: no `sinceLast`, so the delta never fired once, and
+three byte-identical 6,706-char pages were sent inside one run. **P11e's 3.8x has still never run
+in a browser.** The one-glance tell is in the refs — `@f0e1, @f0e2, @f0e3…` contiguous from 1 is
+the old walk counter; HEAD mints backend node ids, which are large and gappy.
 
 **Read before trusting any number:** Enter is a fresh Run, ctrl+Enter is a Reply. Four
 measurement runs have already died — wrong tab, Reply, laptop sleep, and an agent answering
@@ -46,13 +71,17 @@ before believing an action failed. Any `↩` in a log voids that run as a measur
 
 ### The live checklist — one pass discharges five phases' worth of owed verification
 
-None of this is doable from a terminal; all of it is cheap once the extension is loaded.
+Cheap once the extension is loaded. Items 3 and 5 now run from a terminal via `npm run bench`.
 
+0. **RELOAD the extension at `chrome://extensions` first, every time.** Nothing else on this
+   list means anything against a cached build, and nothing on screen says which build it is.
+   Check the refs in any snapshot: contiguous from `@f0e1` is stale. *(2026-08-12)*
 1. **Load `extension/` unpacked** and confirm Chrome's id is `lblllkbcfcaecfpefighocaefnfkebjj`.
    A unit test recomputing our own formula cannot catch a disagreement with Chrome. *(P9)*
-2. **`await endo.selftest()` → 27/27.** *(P7/P9)*
-3. **The measurement run itself**, same task on claude and on cursor — record turns, tokens,
-   cost, wall clock for each. *(features 2 and 3)*
+2. **`await endo.selftest()` → 29/29**, two of them new: the fixture's link is in the snapshot,
+   and clicking it navigates the tab. **Expect the second to FAIL** — see feature 4. *(P7/P9)*
+3. ~~The measurement run itself~~ — **done 2026-08-12, both legs.** Re-take it post-reload,
+   because the numbers above were served by a pre-P11e panel. *(features 2 and 3)*
 4. **One answer containing a table**, to confirm the P9b markdown path renders live. *(P9b)*
 5. **`read_file` inside a real task** — ask a question whose answer is only in the resume, and
    read something past 8,000 chars so the `from:` paging path runs for the first time. *(P11a)*
@@ -77,15 +106,43 @@ None of this is doable from a terminal; all of it is cheap once the extension is
     click the right thing from a page it read four turns ago. This is the one risk deltas carry,
     and only a live run retires it. *(P11e)*
 
-### Phase 11 — one feature left
+### Phase 11 — closed, and it opened phase 12
 
 1. ~~File input the agent can READ~~ — **done, P11a.**
 2. ~~Token efficiency, second pass~~ — **done, P11e. 3.8x off page returns, measured.**
-3. **The claude path brought up to the cursor path's quality.** "Kinda ass with claude, really
-   good with cursor" is the standing verdict and has never been diagnosed — C8 was written to
-   test cursor. Find out *what* is worse (turns? tool adoption? fake-XML retries? the deferred-
-   MCP-tools hypothesis?) before touching anything, **and re-measure post-`f8cc273` first.**
-   This one really does need a live run; nothing about it is answerable from a terminal.
+3. ~~The claude path brought up to the cursor path's quality~~ — **diagnosed, P11f. The gap runs
+   the other way.** Nothing was done to the claude briefing, deliberately: the defect it would
+   have been fixing was already fixed in P11a. cursor got the correction instead.
+
+### Phase 12 — the one that matters: `click` does not follow links
+
+Found while measuring feature 3, and it is bigger than either CLI. Both models saw
+`@f0e17 [link] "200 comments"` correctly serialised, both clicked it, both were handed the front
+page back; claude then routed around it by navigating to HN's Firebase JSON, cursor by trying
+two more refs. Reproduced with no model in the loop at all — a story title (an ordinary external
+`<a href>`), a nav link, and a comments link, top of page and bottom, **none of them navigate**:
+
+```
+click "200 comments"  @f0e17  -> 29 comment-links, still FRONT page
+click story title     @f0e12  -> 29 comment-links, still FRONT page
+click nav "new"       @f0e3   -> still FRONT page
+```
+
+**Ruled out already:** it is not the stale build (`centreOf` and `click` are byte-identical
+between the loaded build and HEAD — `git diff 994c682~1 HEAD -- extension/cdp.js` touches
+neither); it is not a background tab (`tabs` starred it, and `use_tab` foregrounded it first).
+**Not ruled out:** whether mouse hit-testing needs a *visible window* — the Chrome window was
+behind an editor throughout. Settle that first, with a button click as the control: a button
+that mutates the DOM proves events are hit-testing in whatever state the window is in.
+
+If it is not the window, suspect the coordinate space. `centreOf` takes `DOM.getBoxModel`'s
+`content` quad and hands it straight to `Input.dispatchMouseEvent` — document coordinates into a
+viewport-coordinate API, plus whatever per-site zoom the profile carries.
+
+**Why 27/27 never caught it:** every click check in the self-test drives a *button* that
+rewrites the page in place, and `back`/`forward` go through `Page.navigateToHistoryEntry` rather
+than the mouse. `click` was only ever proved on the half of the web that does not navigate. The
+fixture now carries a link and the self-test clicks it (checks 28 and 29).
 
 ### Parked launch chores (P10) — each needs a browser, a camera, or a decision only you can make
 
@@ -303,6 +360,30 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
     tests**, and the self-test gained two live checks plus a shorter form flow: it used to re-find
     every ref after every action, purely because refs went stale.
 
+- **P11f — feature 3, measured instead of guessed (2026-08-12).** The phase's last item, and the
+  work was to find out *what* was worse before touching anything. The answer is that the claude
+  path is no longer the worse one.
+  - **The blocker was not real.** "Nothing about this is answerable from a terminal" had been
+    true of the panel, not of the system: `/mcp` takes a `tools/call` over plain HTTP, and
+    `runClaude`/`runCursor` are exported functions. `scripts/bench.ts` spawns the production
+    adapter — same flags, same briefing, same isolated cursor profile — against the live browser
+    and reads turns, tokens, cost and the tool sequence off the stream. **Both legs of a task
+    that five phases had been waiting on ran in about three minutes.**
+  - **Scored, not believed.** The task was HN's top 3 stories plus the first top-level comment
+    on #1, with ground truth pulled from HN's own API — so "answered from memory", the worst
+    failure this thing has, would have shown as wrong numbers rather than as a confident table.
+    Both models were right.
+  - **claude: one ToolSearch, 14 tools.** P11a's `PRELOAD` fix verified live for the first time.
+    **cursor: four `getMcpTools` calls in `mode: "single_tool"`**, one schema each, one turn
+    each, 4 of 9 turns. The comment in cursor.ts asserting that "cursor hands MCP tools to the
+    model directly" was wrong in both halves and was why cursor had no preload line. It has one
+    now — **unmeasured**, because the panel dropped before the after-number could be taken.
+  - **Where claude's money actually goes:** of $0.2052, cache *writes* are $0.1135 (55%), cache
+    reads $0.0429 (21%), output $0.0481 (23%). Not page size — the conversation itself.
+  - **The rig was measuring code that is not in the tree** (see the gotcha below), so every page
+    number here belongs to the pre-P11e build and must be re-taken after a reload. The
+    claude-vs-cursor comparison survives it: both legs ran against the same stale panel.
+
 ---
 
 ## Decisions locked
@@ -371,6 +452,29 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
 ## Gotchas
 
 - **Never rotate `.endo-token` or `.endo-files.json` without asking.**
+- **Chrome runs the extension it CACHED, not the files on disk, until you reload it — and a
+  panel remount does not reload it.** The side panel is torn down on every window switch, so it
+  feels like the code is re-read constantly; it is re-run from cache. On 2026-08-12 a whole
+  claude-vs-cursor measurement was served by a pre-P11e panel: deltas never fired, and three
+  byte-identical 6,706-char pages went out inside one run, which reads exactly like a delta bug
+  in code that was never running. **Reload before any live number, and check the refs**:
+  contiguous from `@f0e1` is the old walk counter, large and gappy is `backendDOMNodeId`. Nothing
+  in the panel names its build.
+- **`click` has only ever been tested on things that do not navigate.** Every click check in the
+  self-test drives a button that rewrites the page in place, and back/forward go through
+  `Page.navigateToHistoryEntry`, not the mouse — so 27/27 and 155 unit tests were all silent
+  while clicking an ordinary `<a href>` did nothing on a real site. **A test that only exercises
+  the half of a tool that its fixture happens to contain is worth less than its pass count
+  suggests.** The fixture now carries a link for exactly this reason.
+- **`about:blank` is not `DRIVABLE`.** `DRIVABLE` is `/^(https?|file):/`, so a tab parked on
+  about:blank drops out of the `tabs` listing entirely and takes its `*` marker with it — the
+  agent cannot see the tab it is attached to. Parking there between runs is still the right way
+  to make two measurements start from the same prompt; just do not read the missing star as a
+  lost attachment.
+- **A "did it navigate?" check needs a discriminator that cannot be true on both pages.** Testing
+  HN's comments link by looking for `[link] "N comments"` proves nothing: the item page carries
+  one too. Counting them (29 on the front page, 1 on an item page) is the version that works.
+  The first run of this test reported a false negative and nearly buried the click defect.
 - **Opening a tab is a side effect, and the panel does it on every Run.** `pickTab()` created an
   active `about:blank` whenever nothing drivable was open, and the pre-Run re-attach called it
   before the model had asked to go anywhere — so Run from a fresh window meant staring at a black

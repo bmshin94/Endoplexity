@@ -3,4 +3,6 @@ node_modules/
 .endo-mcp.json
 .endo-files.json
 *.log
+# Raw event streams from `npm run bench` — a measurement's evidence, not source.
+*.jsonl
 dist/
