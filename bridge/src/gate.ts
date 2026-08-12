@@ -13,6 +13,8 @@
  * extra round trip to the panel to ask "what does this ref point at".
  */
 
+import { UNCHANGED } from "../../extension/ax.js";
+
 // One actionable line out of serialize(): "@ref [role] "name"", optionally
 // followed by a value or flags this policy does not need.
 const LINE = /^\s*(@\S+)\s+(\[[a-zA-Z]+\]\s+"[^"]*")/;
@@ -30,6 +32,26 @@ let labels = new Map<string, string>();
  * gate to the buttons the last real snapshot found.
  */
 export function remember(text: string): void {
+  // A delta names only what CHANGED, so replacing the map with one would blind
+  // the gate to every control that stayed put — and "Submit application" is
+  // precisely the thing that does not move while a form is being filled. Patch
+  // instead. Imported from ax.js rather than written out again here: this is
+  // the same "the gate depends on ax.js's line format" coupling the module
+  // already accepts, and a copy of the marker could drift silently into a gate
+  // that never fires.
+  if (text.startsWith(UNCHANGED)) {
+    for (const line of text.split("\n")) {
+      const sign = line[0];
+      if (sign !== "+" && sign !== "-") continue;
+      const m = LINE.exec(line.slice(1));
+      if (!m) continue;
+      // Removals come first in a delta, so a control whose label merely changed
+      // is deleted and re-added in that order rather than deleted afterwards.
+      if (sign === "+") labels.set(m[1], m[2]);
+      else labels.delete(m[1]);
+    }
+    return;
+  }
   const found = new Map<string, string>();
   for (const line of text.split("\n")) {
     const m = LINE.exec(line);

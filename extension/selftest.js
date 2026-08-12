@@ -97,12 +97,14 @@ async function runChecks(check, skip, filePath) {
   if (!cont) return;
 
   // Continue hides step 1 and reveals step 2 — the dropdown, the resume button
-  // and Submit Application do not exist until this click. This is what actually
-  // exercises "every snapshot mints a fresh generation": anything grabbed before
-  // this line is stale from here on.
+  // and Submit Application do not exist until this click.
   snap = await cdp.click(cont, { full: true });
 
-  let submit = refFor(snap, "button", "Submit Application");
+  // Found once. It used to be re-found after every action because a snapshot
+  // invalidated the one before it; refs are keyed on the node now, so the ref
+  // survives the select, the upload and everything else below — and the checks
+  // that follow are what proves that on a real page rather than in a stub.
+  const submit = refFor(snap, "button", "Submit Application");
   const select = refFor(snap, "combobox", "Source");
   check("step 2 revealed after Continue", submit && select ? null : `submit=${submit} select=${select}`);
   if (!submit || !select) return;
@@ -114,15 +116,16 @@ async function runChecks(check, skip, filePath) {
 
   // "Referral" is the option whose markup has surrounding whitespace/newlines —
   // choosing it by the clean text proves the trim, not just that select() works.
-  // select(), like click, hands back the page it produced, with fresh refs.
   snap = await cdp.select(select, "Referral");
-  submit = refFor(snap, "button", "Submit Application");
 
   if (filePath) {
     // No ref needed — upload() finds the input itself, which is the point of
     // the exercise: the "Attach resume" button on the page does nothing.
     snap = await cdp.upload(filePath);
-    submit = refFor(snap, "button", "Submit Application");
+    check(
+      "an action on an unchanged page returns a patch, not the page",
+      snap.startsWith("---") ? null : `got ${snap.length} chars of page instead`,
+    );
   } else {
     skip("upload happy path", 'no filePath given — call selftest("C:/path/to/file.pdf") to exercise it');
   }
@@ -160,9 +163,10 @@ async function runChecks(check, skip, filePath) {
   // --- reachability (phase 7) ---
   //
   // Deliberately after the stale-ref check above, not woven into the form flow.
-  // Every snapshot mints a fresh generation, so a hover or a scroll slipped in
-  // earlier would have made `submit` stale before the reload did — and that
-  // check would then pass without the reload having proved anything.
+  // The reload has to be the thing that kills `submit` — a check that passes
+  // because something else invalidated it first has proved nothing about
+  // navigation. (Snapshots no longer invalidate anything, so this is easier to
+  // hold to than it was, but the ordering is still what makes it meaningful.)
   await cdp.navigate(FIXTURE);
 
   let page = await cdp.snapshot();
@@ -256,6 +260,22 @@ async function runChecks(check, skip, filePath) {
   check(
     "reading on returns refs the first page did not",
     [...refsIn(rest)].some((ref) => !refsIn(head).has(ref)) ? null : "same refs as the first page",
+  );
+
+  // The delta invariant, on a real page. Measured 2026-08-12: a snapshot taken
+  // after an action is 99.6% identical to the one before it, and a ten-turn
+  // task was paying for that page fifty-five times. Both halves are checked
+  // here, because the saving is only safe if the second half holds.
+  const first = await cdp.snapshot();
+  const someRef = [...refsIn(first)][0];
+  const again = await cdp.snapshot();
+  check(
+    "re-reading an untouched page costs one line, not a page",
+    again.length < first.length / 4 ? null : `${again.length} chars against ${first.length}`,
+  );
+  check(
+    "and a ref from before that re-read still resolves",
+    someRef && (await cdp.hover(someRef).then(() => null, (err) => err.message)),
   );
 }
 

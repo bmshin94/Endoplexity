@@ -31,6 +31,8 @@ const liveGroups = new Set<number>();
 let nextGroup = 100;
 /** The id chrome.tabs.create hands back next. */
 let newTabId = 2;
+/** Set per test: the AX tree getFullAXTree hands back. Empty unless a test cares. */
+let axNodes: () => unknown[] = () => [];
 
 (globalThis as unknown as { chrome: unknown }).chrome = {
   debugger: {
@@ -41,7 +43,7 @@ let newTabId = 2;
       calls.push({ sessionId, method });
       const message = fail(sessionId, method);
       if (message) throw new Error(message);
-      return method === "Accessibility.getFullAXTree" ? { nodes: [] } : {};
+      return method === "Accessibility.getFullAXTree" ? { nodes: axNodes() } : {};
     },
     onEvent: { addListener: (fn: Handler) => (onEvent = fn) },
     onDetach: { addListener: () => {} },
@@ -193,6 +195,102 @@ test("a tab the human already had open is never dragged into a group", async () 
   // No url: use_tab is switching to a tab that was already there.
   await cdp.useTab(1);
   assert.equal(grouped.length, 0, "grouping someone's own tabs is a change to their window, not ours to make");
+
+  await cdp.detach();
+});
+
+// ---- delta returns -----------------------------------------------------------
+
+/**
+ * A page of ordinary size whose first button's label we can change between
+ * reads. Ten controls, not three: a delta is only sent when the change is small
+ * relative to the page, and on a three-line page nothing ever is.
+ */
+const axPage = (label: string) => ({
+  nodes: [
+    {
+      nodeId: "1",
+      ignored: false,
+      role: { value: "RootWebArea" },
+      name: { value: "P" },
+      childIds: Array.from({ length: 10 }, (_, i) => `n${i}`),
+      properties: [],
+    },
+    ...Array.from({ length: 10 }, (_, i) => ({
+      nodeId: `n${i}`,
+      ignored: false,
+      role: { value: i === 0 ? "button" : "link" },
+      name: { value: i === 0 ? label : i === 1 ? "Docs" : `Item ${i}` },
+      backendDOMNodeId: 11 + i,
+      childIds: [],
+      properties: [],
+    })),
+  ],
+});
+
+test("re-reading a page the agent is working on costs the lines that moved", async () => {
+  let label = "Go";
+  fail = () => null;
+  openTabs = [{ id: 1, url: "https://example.test/", active: true }];
+  axNodes = () => axPage(label).nodes;
+  await cdp.attach(1);
+
+  const full = await cdp.snapshot();
+  assert.match(full, /@f0e11 \[button\] "Go"/, "the first read is the whole page");
+
+  assert.match(await cdp.snapshot(), /nothing/, "a page nobody touched is not worth re-sending");
+
+  label = "Go now";
+  const patch = await cdp.snapshot();
+  assert.match(patch, /^\+ @f0e11 \[button\] "Go now"$/m);
+  assert.doesNotMatch(patch, /Docs/, "the lines that did not move are not re-sent");
+  assert.ok(patch.length < full.length);
+
+  await cdp.detach();
+});
+
+test("a ref from an earlier read still resolves — that is what makes a delta safe", async () => {
+  fail = () => null;
+  axNodes = () => axPage("Go").nodes;
+  await cdp.attach(1);
+
+  await cdp.snapshot();
+  const gen = cdp.state().generation;
+  await cdp.snapshot();
+  assert.equal(cdp.state().generation, gen, "a read no longer invalidates the read before it");
+
+  await cdp.detach();
+});
+
+test("after five deltas the whole page is sent again", async () => {
+  let label = "Go";
+  fail = () => null;
+  axNodes = () => axPage(label).nodes;
+  await cdp.attach(1);
+
+  await cdp.snapshot();
+  const returns = [];
+  for (let i = 0; i < 6; i++) {
+    label = `Go ${i}`;
+    returns.push(await cdp.snapshot());
+  }
+  // The CLIs compact long conversations, and a model whose full page has been
+  // compacted away cannot patch a delta onto anything.
+  assert.equal(returns.filter((r) => r.startsWith("---")).length, 5);
+  assert.match(returns[5], /@f0e12 \[link\] "Docs"/, "the sixth is a whole page again");
+
+  await cdp.detach();
+});
+
+test("navigating away sends the new page whole, never as a patch", async () => {
+  fail = () => null;
+  axNodes = () => axPage("Go").nodes;
+  await cdp.attach(1);
+  await cdp.snapshot();
+
+  // What Page.frameNavigated does: a different page is not a delta of the last.
+  onEvent({ tabId: 1 }, "Page.frameNavigated", { frame: { url: "https://other.test/" } });
+  assert.match(await cdp.snapshot(), /@f0e12 \[link\] "Docs"/);
 
   await cdp.detach();
 });

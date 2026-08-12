@@ -14,7 +14,7 @@
 //
 // Requires Chrome 125+, where chrome.debugger.sendCommand accepts a sessionId.
 
-import { serialize } from "./ax.js";
+import { delta, serialize } from "./ax.js";
 
 const MAIN = ""; // the tab's own session — sendCommand target with no sessionId
 
@@ -382,7 +382,14 @@ export async function snapshot(options) {
   // the counter past this and EVERY ref from this snapshot reads as stale.
   // Reading the live counter per ref would mark only the early frames stale and
   // silently bless the rest.
-  const gen = ++generation;
+  //
+  // Read, not bumped. A snapshot used to invalidate the last one because refs
+  // were positional and a re-read renumbered them; they are keyed on the node
+  // now, so re-reading a page the model is working on no longer throws away
+  // everything it knows about that page. Only invalidate() bumps — navigation,
+  // a detached frame, a new attachment — which are the events that really do
+  // end a ref's meaning.
+  const gen = generation;
   refs = new Map();
 
   const out = [];
@@ -414,7 +421,31 @@ export async function snapshot(options) {
       else out.push(`(frame ${frame.tag} unavailable: ${err.message})`);
     }
   }
-  return out.join("\n");
+  return sinceLast(out.join("\n"), gen);
+}
+
+/** The page as the model was last shown it, so an unchanged one is not re-sent. */
+let shown = { generation: -1, text: "", run: 0 };
+
+/**
+ * How many deltas may follow one full page.
+ *
+ * Not a tuning knob so much as a floor under the worst case: the CLIs manage
+ * their own context and can compact a long conversation, and a model whose full
+ * page has been compacted away cannot patch a delta onto anything. Five bounds
+ * how far back the page it is patching can be, at a cost of one full page in six.
+ */
+const DELTA_RUN = 5;
+
+function sinceLast(text, gen) {
+  // A different generation is a different page — navigation, a new tab, a
+  // dropped frame — so there is nothing to be a delta against.
+  const base = shown.generation === gen && shown.run < DELTA_RUN ? shown.text : null;
+  const patch = base === null ? null : delta(base, text);
+  // The full text is always what gets remembered, never the patch: the next
+  // delta has to describe the page, not the last description of it.
+  shown = { generation: gen, text, run: patch === null ? 0 : shown.run + 1 };
+  return patch ?? text;
 }
 
 function requireAttached() {

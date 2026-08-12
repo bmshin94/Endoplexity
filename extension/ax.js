@@ -87,7 +87,6 @@ export function serialize(nodes, frame, { maxLines = 300, full = false, from = 0
   // was not already paying: the tree is traversed in full either way.
   const all = [];
   const refs = new Map();
-  let seq = 0;
 
   // One space per level, not two: indentation is relative, so half of it was
   // pure width. On a deep page that was a few hundred tokens of nothing.
@@ -104,9 +103,21 @@ export function serialize(nodes, frame, { maxLines = 300, full = false, from = 0
       // Ignored nodes are invisible to assistive tech, but their subtree is not
       // necessarily — keep walking.
     } else if (ACTIONABLE.has(role)) {
-      const ref = `@${frame}e${++seq}`;
-      if (node.backendDOMNodeId != null) refs.set(ref, node.backendDOMNodeId);
-      emit(`${ref} [${role}]${name ? ` "${name}"` : ""}${valueOf(node)}${flagsOf(node)}`, depth);
+      // The ref IS the node, not its position in this walk.
+      //
+      // A counter renumbers everything below any element that appears or
+      // disappears — so after a re-render @f0e12 silently meant a DIFFERENT
+      // control, and the only safe response was to invalidate every ref on
+      // every snapshot. That is what made a re-read cost the model everything
+      // it knew about the page. Keyed on the backend DOM node id, a ref means
+      // the same element for as long as that element is on the page, which is
+      // what makes returning only the CHANGED lines safe.
+      const id = node.backendDOMNodeId;
+      const ref = id == null ? "" : `@${frame}e${id}`;
+      // A node with no backend id cannot be acted on either way; it used to get
+      // a ref that could only ever answer "unknown ref".
+      if (ref) refs.set(ref, id);
+      emit(`${ref && `${ref} `}[${role}]${name ? ` "${name}"` : ""}${valueOf(node)}${flagsOf(node)}`, depth);
       childDepth = depth + 1;
       childAnnounced = name;
     } else if (PROSE.has(role) && (full || LEAN_PROSE.has(role)) && name && name !== announced) {
@@ -140,4 +151,43 @@ export function serialize(nodes, frame, { maxLines = 300, full = false, from = 0
   if (below) lines.push(`… ${below} more lines below — call snapshot with from: ${start + maxLines} to read on`);
 
   return { text: lines.join("\n"), refs };
+}
+
+/**
+ * The marker that opens a delta return. Exported because the bridge's gate
+ * reads relayed page text and has to tell "here is the page" from "here is what
+ * changed" — a difference it must not get wrong (see gate.ts's remember()).
+ */
+export const UNCHANGED = "--- the page you last read, unchanged except:";
+
+/**
+ * What changed between two reads of the same page, or null if too much did.
+ *
+ * Measured 2026-08-12 on real pages: a snapshot taken after an action is
+ * **99.6% identical** to the one before it — 260 lines, one of them new. Every
+ * tool call returns the page it produced, and every tool return crosses the
+ * model's context on every LATER turn too, so a ten-turn form fill was paying
+ * for the same page fifty-five times over. This is the difference between that
+ * and paying for it once plus the lines that actually moved.
+ *
+ * Safe only because refs are keyed on the node (see the walk above): the model
+ * acts on refs it read in an earlier turn, and those still mean what they meant.
+ */
+export function delta(before, after) {
+  const now = after.split("\n");
+  const was = before.split("\n");
+  const had = new Set(was);
+  const has = new Set(now);
+  const added = now.filter((line) => !had.has(line));
+  const gone = was.filter((line) => !has.has(line));
+
+  // A page that moved this much is a page to read, not a page to patch: the
+  // delta stops being shorter than the thing it replaces (every changed line
+  // costs a `-` AND a `+`), and a model reassembling it is a model one merge
+  // error away from clicking the wrong control.
+  if (added.length + gone.length > now.length * 0.4) return null;
+  if (!added.length && !gone.length) return `${UNCHANGED}\n(nothing — the page is exactly as you last read it)`;
+  // Indentation is dropped: it located a line inside a tree that is no longer
+  // being printed, and the ref locates it better.
+  return [UNCHANGED, ...gone.map((line) => `- ${line.trim()}`), ...added.map((line) => `+ ${line.trim()}`)].join("\n");
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serialize } from "../../extension/ax.js";
+import { delta, serialize, UNCHANGED } from "../../extension/ax.js";
 
 // Minimal stand-ins for Accessibility.getFullAXTree nodes — only the fields the
 // serializer reads.
@@ -40,29 +40,56 @@ const form = () => [
   node("9", "checkbox", { name: "Subscribe", backendDOMNodeId: 14, props: { checked: "false" } }),
 ];
 
-test("refs are sequential, namespaced per frame, and map to backend node ids", () => {
+test("a ref names the node, not its position, and is namespaced per frame", () => {
   const { refs } = serialize(form(), "f0");
   assert.deepEqual([...refs], [
-    ["@f0e1", 11],
-    ["@f0e2", 12],
-    ["@f0e3", 13],
-    ["@f0e4", 14],
+    ["@f0e11", 11],
+    ["@f0e12", 12],
+    ["@f0e13", 13],
+    ["@f0e14", 14],
   ]);
 
   // Same tree in an OOPIF must not collide with the main frame's refs.
-  assert.deepEqual([...serialize(form(), "f1").refs.keys()], ["@f1e1", "@f1e2", "@f1e3", "@f1e4"]);
+  assert.deepEqual([...serialize(form(), "f1").refs.keys()], ["@f1e11", "@f1e12", "@f1e13", "@f1e14"]);
+});
+
+// The property every delta return rests on. With a walk counter, inserting one
+// control at the top renumbered everything below it — so a ref the model was
+// still holding silently came to mean a different element, and the only safe
+// answer was to invalidate the whole page on every read.
+test("a control appearing above the others does not renumber them", () => {
+  const before = serialize(form(), "f0");
+  const grown = form();
+  grown[0]!.childIds!.unshift("0");
+  grown.unshift(node("0", "button", { name: "Close banner", backendDOMNodeId: 99 }));
+  const after = serialize(grown, "f0");
+
+  assert.match(after.text, /@f0e99 \[button\] "Close banner"/);
+  for (const [ref, id] of before.refs) {
+    assert.equal(after.refs.get(ref), id, `${ref} must still mean the same node`);
+  }
+});
+
+test("an actionable node with no backend id gets no ref, rather than one that cannot resolve", () => {
+  const page = [
+    node("1", "RootWebArea", { childIds: ["2"] }),
+    node("2", "button", { name: "Ghost" }),
+  ];
+  const { text, refs } = serialize(page, "f0");
+  assert.equal(refs.size, 0);
+  assert.match(text, /^\[button\] "Ghost"$/m, "a ref that can only answer 'unknown ref' is worse than none");
 });
 
 test("renders role, name, value and only the flags that are on", () => {
   const { text } = serialize(form(), "f0");
-  assert.match(text, /@f0e1 \[textbox\] "First Name" \(required\)/);
-  assert.match(text, /@f0e2 \[textbox\] "Email" = "a@b\.com"$/m);
+  assert.match(text, /@f0e11 \[textbox\] "First Name" \(required\)/);
+  assert.match(text, /@f0e12 \[textbox\] "Email" = "a@b\.com"$/m);
   assert.doesNotMatch(text, /checked/); // checked="false" is not a flag that is on
 });
 
 test("walks through ignored wrappers but drops text the control already announced", () => {
   const { text } = serialize(form(), "f0");
-  assert.match(text, /@f0e3 \[button\] "Submit Application"/); // found under the ignored node
+  assert.match(text, /@f0e13 \[button\] "Submit Application"/); // found under the ignored node
   assert.equal(text.match(/Submit Application/g)?.length, 1); // StaticText echo dropped
   assert.equal(text.match(/Apply for this job/g)?.length, 1);
 });
@@ -81,7 +108,7 @@ test("body prose is dropped by default and comes back with full", () => {
   const lean = serialize(page, "f0").text;
   assert.doesNotMatch(lean, /domesticated/); // the expensive half
   assert.match(lean, /\[heading\] "Cat"/); // orientation stays
-  assert.match(lean, /@f0e1 \[link\] "Read more"/); // and everything actionable
+  assert.match(lean, /@f0e7 \[link\] "Read more"/); // and everything actionable
 
   assert.match(serialize(page, "f0", { full: true }).text, /domesticated/);
 });
@@ -96,8 +123,8 @@ test("survives non-string AX values", () => {
     node("3", "checkbox", { name: "Mute", value: true, backendDOMNodeId: 8 }),
   ];
   const { text } = serialize(page, "f0");
-  assert.match(text, /@f0e1 \[slider\] "Volume" = "0\.5"/);
-  assert.match(text, /@f0e2 \[checkbox\] "Mute" = "true"/);
+  assert.match(text, /@f0e7 \[slider\] "Volume" = "0\.5"/);
+  assert.match(text, /@f0e8 \[checkbox\] "Mute" = "true"/);
 });
 
 const many = () => [
@@ -119,9 +146,9 @@ test("from: reads on where the cap stopped, without renumbering refs", () => {
   const head = serialize(many(), "f0", { maxLines: 10 });
   const rest = serialize(many(), "f0", { maxLines: 10, from: 10 });
 
-  assert.match(head.text, /@f0e1 \[button\] "B0"/);
+  assert.match(head.text, /@f0e0 \[button\] "B0"/);
   assert.doesNotMatch(head.text, /"B10"/);
-  assert.match(rest.text, /@f0e11 \[button\] "B10"/); // e11, not e1 — same node, same ref
+  assert.match(rest.text, /@f0e10 \[button\] "B10"/); // the node's own ref, on whichever page it lands
   assert.match(rest.text.split("\n")[0]!, /10 earlier lines not shown/);
   assert.match(rest.text, /from: 20/);
 
@@ -141,4 +168,52 @@ test("the last page of a paginated read has no read-on notice", () => {
 test("a from past the end returns just the marker, not a crash", () => {
   const { text } = serialize(many(), "f0", { maxLines: 10, from: 999 });
   assert.equal(text, "… 999 earlier lines not shown (reading from line 999)");
+});
+
+// ---- delta returns ----------------------------------------------------------
+//
+// Measured on real pages 2026-08-12: a snapshot taken after an action is 99.6%
+// identical to the one before it — 260 lines, one of them new. Actions return
+// the page they produced and every return is re-sent on every later turn, so a
+// ten-turn form fill paid for that page fifty-five times.
+
+test("typing into a field costs the line that changed, not the page", () => {
+  const before = serialize(form(), "f0").text;
+  const typed = form();
+  typed[3] = node("4", "textbox", { name: "First Name", value: "Ada", backendDOMNodeId: 11, props: { required: true } });
+  const after = serialize(typed, "f0").text;
+
+  const patch = delta(before, after)!;
+  assert.ok(patch.startsWith(UNCHANGED));
+  assert.match(patch, /^- @f0e11 \[textbox\] "First Name" \(required\)$/m);
+  assert.match(patch, /^\+ @f0e11 \[textbox\] "First Name" = "Ada" \(required\)$/m);
+  assert.ok(patch.length < after.length, "a delta that is not shorter than the page is not worth sending");
+  // The Submit button is not in the patch — which is exactly why the gate has
+  // to merge rather than replace. See gate.test.ts.
+  assert.doesNotMatch(patch, /Submit Application/);
+});
+
+test("a page that did not change at all says so in one line", () => {
+  const text = serialize(form(), "f0").text;
+  const patch = delta(text, text)!;
+  assert.match(patch, /nothing/);
+  assert.ok(patch.length < 120, `${patch.length} chars to say nothing happened`);
+});
+
+test("a page that moved too much is sent whole, not patched", () => {
+  // Navigation, a flyout opening, a search returning results — a delta here is
+  // no shorter than the page, and reassembling one is a wrong click waiting.
+  const patch = delta(serialize(form(), "f0").text, serialize(many(), "f0").text);
+  assert.equal(patch, null);
+});
+
+test("a delta is built from lines, so an unchanged control keeps its exact ref", () => {
+  const before = serialize(form(), "f0").text;
+  const grown = form();
+  grown[0]!.childIds!.unshift("0");
+  grown.unshift(node("0", "button", { name: "Close banner", backendDOMNodeId: 99 }));
+
+  const patch = delta(before, serialize(grown, "f0").text)!;
+  assert.match(patch, /^\+ @f0e99 \[button\] "Close banner"$/m);
+  assert.doesNotMatch(patch, /^- /m, "nothing was removed — with positional refs every line below would have moved");
 });

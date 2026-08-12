@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serialize } from "../../extension/ax.js";
+import { delta, serialize, UNCHANGED } from "../../extension/ax.js";
 import { check, remember, labelFor, rememberApproval, resetApprovals } from "../src/gate.ts";
 import { askPanel, setPanel, dropPanel, panelConnected, settle, settleGate } from "../src/relay.ts";
 import { relay } from "../src/mcp.ts";
@@ -214,4 +214,49 @@ test("labelFor returns the label for a known ref and undefined for an unknown on
   const [submitRef] = refs.keys();
   assert.equal(labelFor(submitRef), '[button] "Submit Application"');
   assert.equal(labelFor("@f0e999"), undefined);
+});
+
+// ---- deltas ------------------------------------------------------------------
+//
+// A page return can now be only what CHANGED since the model's last read. The
+// gate reads those same returns, so it has to patch its ref->label map rather
+// than replace it — the whole point of a form fill is that the Submit button
+// does NOT change while the fields around it do.
+
+// A form with enough fields that changing one is a small change — which is the
+// only situation a delta is sent in at all.
+const bigForm = (fourth: string) => [
+  node("1", "RootWebArea", { name: "Apply", childIds: ["2", "3", "4", "5", "6", "7"] }),
+  node("2", "button", { name: "Submit Application", backendDOMNodeId: 11 }),
+  node("3", "link", { name: "Read more", backendDOMNodeId: 12 }),
+  node("4", "textbox", { name: "First name", backendDOMNodeId: 13 }),
+  node("5", "textbox", { name: "Last name", backendDOMNodeId: 14 }),
+  node("6", "textbox", { name: "Email", backendDOMNodeId: 15 }),
+  node("7", "textbox", { name: fourth, backendDOMNodeId: 16 }),
+];
+
+test("a delta does not blind the gate to the button that stayed put", () => {
+  const before = serialize(bigForm("Phone"), "f0");
+  remember(before.text);
+
+  // The agent types into one field; the page comes back as a patch naming that
+  // field and nothing else.
+  const patch = delta(before.text, serialize(bigForm("Phone (mobile)"), "f0").text)!;
+  assert.ok(patch, "a one-field change is exactly the case a delta is for");
+  assert.doesNotMatch(patch, /Submit Application/, "the premise: the patch does not mention it");
+  remember(patch);
+
+  assert.equal(
+    check("click", { ref: "@f0e11" }),
+    `click @f0e11 [button] "Submit Application"`,
+    "replacing the map with a patch would have let a real submit through ungated",
+  );
+  // And the patched line is current, not the old label.
+  assert.equal(labelFor("@f0e16"), `[textbox] "Phone (mobile)"`);
+});
+
+test("a control the delta removed stops being gated", () => {
+  remember(serialize(page(), "f0").text);
+  remember(`${UNCHANGED}\n- @f0e11 [button] "Submit Application"`);
+  assert.equal(check("click", { ref: "@f0e11" }), null, "it is not on the page any more");
 });

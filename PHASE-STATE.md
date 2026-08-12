@@ -72,19 +72,20 @@ None of this is doable from a terminal; all of it is cheap once the extension is
     taken anywhere until the agent actually navigates. *(P11c)*
 13. **A multi-tab run puts its tabs in one green group named after the task**, and a second run
     does not stack a second group on top of the first. *(P11d)*
+14. **A real agent acting on a patch.** `await endo.selftest()` now covers the mechanism, but no
+    model has yet been handed `--- the page you last read, unchanged except:` and gone on to
+    click the right thing from a page it read four turns ago. This is the one risk deltas carry,
+    and only a live run retires it. *(P11e)*
 
-### Phase 11 — the two features left
+### Phase 11 — one feature left
 
 1. ~~File input the agent can READ~~ — **done, P11a.**
-2. **Token efficiency, second pass.** The user's words are "this is too consuming". P3 measured
-   the 5-tool world; the bill now carries a 14-tool schema (~1,829 tokens at 13, `read_file`
-   adds ~180) plus `full:` returns. Known levers if the number justifies them: dead OOPIF
-   sessions still costing a failed round trip and a noise line each, stale-ref recovery costing
-   a whole page, and `full:` on a redirect wall being paid before you learn the page was wrong.
+2. ~~Token efficiency, second pass~~ — **done, P11e. 3.8x off page returns, measured.**
 3. **The claude path brought up to the cursor path's quality.** "Kinda ass with claude, really
    good with cursor" is the standing verdict and has never been diagnosed — C8 was written to
    test cursor. Find out *what* is worse (turns? tool adoption? fake-XML retries? the deferred-
    MCP-tools hypothesis?) before touching anything, **and re-measure post-`f8cc273` first.**
+   This one really does need a live run; nothing about it is answerable from a terminal.
 
 ### Parked launch chores (P10) — each needs a browser, a camera, or a decision only you can make
 
@@ -269,6 +270,39 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
     renders **2 copies** of the answer and keeps the prompt; after, **1** and an empty box.
     **140 → 143 tests.**
 
+- **P11e — a page is sent once, then only what moved (2026-08-12). Feature 2, closed with a
+  number.** Half of it was never blocked on a live run: what a *page* costs is deterministic and
+  measurable from a terminal against real sites, and that is where the bill is.
+  - **Measured first, on real pages through the real `serialize()`:** a snapshot taken after an
+    action is **99.6% identical** to the one before it — 260 lines, one of them new. Actions
+    return the page they produced and every return is re-sent on every later turn, so a ten-turn
+    task paid for that page **fifty-five times**. The 14-tool schema people worry about is ~1,829
+    tokens; this is tens of thousands.
+  - **Refs are keyed on the backend DOM node id, not a walk counter.** This is the enabling
+    change, not a tidy-up: a counter renumbered everything below any element that appeared or
+    disappeared, so a held ref silently came to mean a *different control* — which is why every
+    snapshot had to invalidate the one before it. **Verified on real pages: 260/260 and 713/713
+    refs survive a relabel plus a banner inserted at the very top of the document, and zero point
+    at a different node.** Under the old scheme that insertion moved every ref on the page.
+  - **So a snapshot no longer bumps the generation.** Only navigation, a detached frame or a new
+    attachment do — the events that really do end a ref's meaning. Re-reading a page the agent is
+    working on no longer throws away everything it knows about that page, which also retires the
+    "stale-ref recovery costs a whole page" lever from the other direction.
+  - **`delta()` in ax.js** returns the changed lines under a marker, or **null when more than 40%
+    of the page moved** — past that a delta is no shorter than the page (every changed line costs
+    a `-` and a `+`) and a model reassembling one is a merge error away from the wrong click.
+    Five deltas maximum before a full page, because the CLIs compact long conversations and a
+    model whose full page was compacted away cannot patch onto anything.
+  - **The gate patches its label map instead of replacing it.** A delta names only what changed,
+    and "Submit application" is precisely what does *not* change while a form is filled — so a
+    wholesale replace would have blinded the approval gate to every irreversible control on the
+    page. `UNCHANGED` is imported from ax.js rather than copied, because a drifted copy is a gate
+    that never fires. Pinned by a test that fails the ungated-submit way.
+  - **Result: 3.8x off page returns** — 119,856 → 31,626 tokens on a ten-turn HN task, 143,275 →
+    37,536 on Wikipedia (73.6% / 73.8%). For scale, P3's prose-cutting was 1.5x. **151 → 155
+    tests**, and the self-test gained two live checks plus a shorter form flow: it used to re-find
+    every ref after every action, purely because refs went stale.
+
 ---
 
 ## Decisions locked
@@ -296,6 +330,15 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
 - **Document returns are capped and paged, like snapshots.** A tool return crosses the model's
   context on every LATER turn too, so one 40k-character spreadsheet is paid ten times over a
   ten-turn task
+- **A ref names the node, not its position in the walk, and a snapshot no longer invalidates the
+  one before it.** Positional refs forced every read to throw away every ref, because inserting
+  one element renumbered everything under it. Keyed on the backend DOM node id a ref means the
+  same element until the element goes away — which is what makes it safe to return only the
+  lines that changed, and what makes a re-read cheap instead of destructive
+- **A page is sent whole once, then as a patch — but never more than five patches running, and
+  never when more than 40% of it moved.** Both bounds are about the model, not the byte count: it
+  has to be able to reassemble the page from something still in its context, and past ~40% the
+  patch stops being smaller than the page anyway
 - **A mention hands over an id, not a page.** `@`-ing a tab tells the model the tab exists and
   what its id is, in the shape `use_tab` takes; the model decides whether that page is worth a
   turn. Inlining the content instead would detach from the attached tab to snapshot it — killing
@@ -334,6 +377,15 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
   page under a debugger banner for a whole turn. Same rule as `currentPage()`, which was already
   written this way: **building a prompt must not have side effects.** Only a caller about to
   drive a tab may open one.
+- **Anything that reads relayed page text has to handle a PATCH, not just a page.** The gate was
+  the one that mattered — it replaced its ref→label map wholesale, and a patch names only what
+  changed, so a form fill would have left it blind to the Submit button it exists to catch. Any
+  future consumer of page text inherits this: ask whether the text starts with `UNCHANGED` before
+  treating it as the whole page.
+- **A delta test needs a realistically sized page.** Two- and three-line fixtures never produce
+  one — a single changed line is already over the 40% bar — so a test written on a small page
+  silently exercises the full-page path and proves nothing about deltas. Cost two rounds of
+  confusing failures; the fixtures are ten controls now for exactly this reason.
 - **"The model said it twice" is a dedup bug, not a model bug.** Both CLIs send the final message
   as an assistant event and again as the result summary, so the panel has always had to drop one.
   It compared against the **latest** assistant text, which silently stops working the moment the
