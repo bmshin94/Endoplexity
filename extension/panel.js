@@ -301,9 +301,21 @@ function cost(event) {
   return parts.join(" · ");
 }
 
-// Both CLIs emit the final message twice — once as an assistant event, once as
-// the result's summary — which printed every answer twice over.
-let lastSaid = "";
+/**
+ * Everything the model has said this run, so the result event can be recognised
+ * as a repeat of it.
+ *
+ * Both CLIs emit the final message twice — once as an assistant event, once as
+ * the result's summary. This used to hold only the LATEST assistant text, which
+ * is right only when the answer is the very last thing said. It is not, often:
+ * a long answer arrives split across two assistant events, or a closing line
+ * follows it — and then the result matched nothing and the whole answer printed
+ * a second time under the first. Measured on grok, 2026-08-12, on a
+ * three-tab research run.
+ */
+let said = [];
+/** A repeat of anything said this run, including a run of messages joined. */
+const alreadySaid = (text) => said.join("\n").includes(text);
 
 /**
  * One task event -> the conversation.
@@ -316,14 +328,14 @@ let lastSaid = "";
  */
 function show(event) {
   if (event.type === "assistant") {
-    const said = (event.message?.content ?? [])
+    const text = (event.message?.content ?? [])
       .filter((part) => part.type !== "tool_use")
       .map((part) => part.text ?? "")
       .join("\n")
       .trim();
-    if (!said) return;
-    lastSaid = said;
-    return ui.assistant(said);
+    if (!text) return;
+    said.push(text);
+    return ui.assistant(text);
   }
   // cursor's tool_call event is now redundant with answer()'s row.
   if (event.type === "tool_call") return;
@@ -339,13 +351,13 @@ function show(event) {
   }
   if (event.type === "retry") return ui.note(`↻ ${event.reason}`);
   if (event.type === "result") {
-    const said = String(event.result ?? "").trim();
-    // Usually a verbatim repeat of the assistant event, but not always: cursor
+    const text = String(event.result ?? "").trim();
+    // Usually a verbatim repeat of what was already said, but not always: cursor
     // can finish with result:"" after leaving its answer in thinking deltas
     // (measured on composer-2.5), so dropping it unconditionally would lose the
     // only copy on some runs.
-    if (said && said !== lastSaid) ui.assistant(said);
-    else if (!said && !lastSaid) {
+    if (text && !alreadySaid(text)) ui.assistant(text);
+    else if (!text && !said.length) {
       ui.note("the model produced no text — cursor sometimes leaves its answer in thinking deltas");
     }
     return ui.chip(cost(event));
@@ -501,7 +513,7 @@ async function runTask(resume = false) {
   // Claim the slot before the await below, or a second Run lands in the window
   // where the guard has passed but nothing is disabled yet.
   setBusy(true);
-  lastSaid = "";
+  said = [];
 
   // A fresh Run drives the tab you are looking at NOW.
   //
@@ -522,6 +534,10 @@ async function runTask(resume = false) {
   // this browser" banner — for the whole of the model's first turn. The first
   // tool call opens the tab it needs, and navigates it immediately.
   if (!resume) {
+    // The task names the group any tabs this run opens will land in, so three
+    // pricing pages read as one piece of work rather than three strays. A reply
+    // deliberately keeps the previous name: it is the same piece of work.
+    cdp.nameRun(prompt);
     try {
       await cdp.detach();
       await cdp.attach(undefined, { open: false });
@@ -552,9 +568,11 @@ async function runTask(resume = false) {
   }
   ui.user(prompt);
   setWhere(resume ? undefined : page, "run");
-  // Only on a reply — a re-read task is worth keeping in the box, a re-sent
-  // answer is just the same answer twice.
-  if (resume) promptEl.value = "";
+  // Always. It used to be kept on a fresh Run, on the theory that a task is
+  // worth re-running — but the task is already the heading of its own answer
+  // two lines up, so what the box actually held was a stale copy sitting under
+  // a live run, and the next task had to be typed around it.
+  promptEl.value = "";
 }
 
 // Survives the panel closing, which Chrome does on every window switch.

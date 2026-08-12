@@ -25,6 +25,12 @@ let onEvent: Handler = () => {};
 /** Set per test: what the window has open, and whether anyone opened a tab. */
 let openTabs = [{ id: 1, url: "https://example.test/", active: true }];
 let created = 0;
+/** Every chrome.tabs.group call, and which group ids Chrome still knows about. */
+const grouped: { groupId?: number; tabIds: number[] }[] = [];
+const liveGroups = new Set<number>();
+let nextGroup = 100;
+/** The id chrome.tabs.create hands back next. */
+let newTabId = 2;
 
 (globalThis as unknown as { chrome: unknown }).chrome = {
   debugger: {
@@ -43,8 +49,25 @@ let created = 0;
   tabs: {
     get: async () => ({ id: 1, url: "https://example.test/", title: "t" }),
     query: async () => openTabs,
-    create: async () => ({ id: (created++, 2) }),
+    create: async () => ({ id: (created++, newTabId) }),
+    update: async () => {},
+    group: async (options: { groupId?: number; tabIds: number[] }) => {
+      grouped.push(options);
+      if (options.groupId !== undefined) return options.groupId;
+      const id = nextGroup++;
+      liveGroups.add(id);
+      return id;
+    },
     onUpdated: { addListener: () => {}, removeListener: () => {} },
+  },
+  tabGroups: {
+    // Chrome deletes a group when its last tab closes, and `get` on a dropped
+    // id rejects — which is the only way to ask whether one still exists.
+    get: async (id: number) => {
+      if (!liveGroups.has(id)) throw new Error("No group with id: " + id);
+      return { id };
+    },
+    update: async () => {},
   },
 };
 
@@ -107,6 +130,69 @@ test("with nothing drivable open, only the caller that will USE a tab opens one"
   // and navigate() puts a real page on it immediately.
   assert.equal(await cdp.attach(), 2, "the tool layer opens the tab it is about to drive");
   assert.equal(created, 1);
+
+  await cdp.detach();
+});
+
+test("every tab a run opens lands in ONE named group", async () => {
+  fail = () => null;
+  openTabs = [{ id: 1, url: "https://example.test/", active: true }];
+  await cdp.attach(1);
+  grouped.length = 0;
+  cdp.nameRun("compare the free tiers of vercel, netlify and cloudflare");
+
+  for (const [tab, url] of [
+    [21, "https://vercel.com/pricing"],
+    [22, "https://netlify.com/pricing"],
+    [23, "https://pages.cloudflare.com/"],
+  ] as [number, string][]) {
+    newTabId = tab;
+    await cdp.useTab(undefined, url);
+  }
+
+  assert.equal(grouped.length, 3, "each opened tab is grouped");
+  assert.equal(grouped[0].groupId, undefined, "the first allocates the group");
+  assert.equal(
+    new Set(grouped.slice(1).map((g) => g.groupId)).size,
+    1,
+    "and every later tab JOINS that one — a group per tab is the failure this feature is known for",
+  );
+
+  await cdp.detach();
+});
+
+test("a group Chrome has already dropped is not reused", async () => {
+  fail = () => null;
+  await cdp.attach(1);
+  grouped.length = 0;
+  cdp.nameRun("read two pages");
+
+  newTabId = 31;
+  await cdp.useTab(undefined, "https://a.test/");
+  // The user closed every tab in it, so Chrome deleted the group.
+  liveGroups.delete(nextGroup - 1);
+
+  newTabId = 32;
+  await cdp.useTab(undefined, "https://b.test/");
+  assert.equal(
+    grouped[1].groupId,
+    undefined,
+    "reusing a dead id throws on every open for the rest of the session — allocate a new one instead",
+  );
+
+  await cdp.detach();
+});
+
+test("a tab the human already had open is never dragged into a group", async () => {
+  fail = () => null;
+  openTabs = [{ id: 1, url: "https://example.test/", active: true }];
+  await cdp.attach(1);
+  grouped.length = 0;
+  cdp.nameRun("look at this page");
+
+  // No url: use_tab is switching to a tab that was already there.
+  await cdp.useTab(1);
+  assert.equal(grouped.length, 0, "grouping someone's own tabs is a change to their window, not ours to make");
 
   await cdp.detach();
 });

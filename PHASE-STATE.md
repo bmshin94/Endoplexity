@@ -70,6 +70,8 @@ None of this is doable from a terminal; all of it is cheap once the extension is
     whole claim of the feature. *(P11c)*
 12. **Run from a window with no drivable tab** (one fresh New Tab page) and confirm you are not
     taken anywhere until the agent actually navigates. *(P11c)*
+13. **A multi-tab run puts its tabs in one green group named after the task**, and a second run
+    does not stack a second group on top of the first. *(P11d)*
 
 ### Phase 11 — the two features left
 
@@ -248,6 +250,24 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
     unlike the page line: a tab named in a follow-up is new information.
   - Verified headless in a true 360px iframe, both themes: menu opens on `@`, filters to one row
     on `@netl`, Enter inserts the label and closes it, horizontal overflow 0. **132 → 140 tests.**
+- **P11d — three things a grok demo exposed (2026-08-12).** All three were "small" and all three
+  are why the panel did not read as finished.
+  - **The answer printed twice.** Both CLIs emit the final message as an assistant event *and* as
+    the result's summary, and the panel dropped the repeat by comparing it to the **last** thing
+    said. That is right only when the answer is the last thing said — grok closed with a sources
+    line after it, so the result matched nothing and the whole table rendered a second time under
+    the first. Now the run keeps everything said and drops a result already contained in it.
+  - **Run stopped leaving the task in the box.** It was kept on purpose ("a re-read task is worth
+    re-running"), but the task is already the heading of its own answer, so the box just held a
+    stale copy under a live run that the next task had to be typed around.
+  - **Tabs the agent opens now land in one named group**, titled by the task. Previously rejected
+    for a real reason — the known failure is groups that multiply and are never cleaned up — so
+    the rules are: one group id per run, checked to still exist before reuse, and **only tabs the
+    agent itself opened**, never one the human already had. No cleanup path, because Chrome drops
+    an empty group by itself. Needs the new `tabGroups` permission.
+  - Verified by replaying that exact run through the panel headless: on the previous commit it
+    renders **2 copies** of the answer and keeps the prompt; after, **1** and an empty box.
+    **140 → 143 tests.**
 
 ---
 
@@ -314,6 +334,16 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
   page under a debugger banner for a whole turn. Same rule as `currentPage()`, which was already
   written this way: **building a prompt must not have side effects.** Only a caller about to
   drive a tab may open one.
+- **"The model said it twice" is a dedup bug, not a model bug.** Both CLIs send the final message
+  as an assistant event and again as the result summary, so the panel has always had to drop one.
+  It compared against the **latest** assistant text, which silently stops working the moment the
+  model says anything after its answer — a sources line, a sign-off — or splits a long answer
+  across two events. Compare against **everything said this run**, not the last thing.
+- **Tab groups multiply unless the id is per RUN and checked before reuse.** Chrome deletes a
+  group when its last tab closes, and there is no "does this exist" call — `tabGroups.get` on a
+  dropped id rejects, and that rejection IS the check. Without it a stale id throws on every
+  later open for the rest of the session; without one id per run you get a group per tab, which
+  is the shape of the four bug reports that got this feature rejected the first time.
 - **An `@` menu must not fire inside an email address.** Form-filling tasks type addresses far
   more often than mentions, so the trigger is anchored to a word boundary (`(?:^|\s)@`) and the
   query takes no spaces — an unanchored one turned `name@example.com` into a tab picker, and a

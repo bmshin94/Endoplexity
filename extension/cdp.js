@@ -245,6 +245,53 @@ export async function go(direction, options) {
  * Filtered by DRIVABLE for the same reason attach() is: offering a chrome://
  * tab the agent then cannot attach to is worse than not listing it.
  */
+/*
+ * Tabs the agent OPENS go into one named group per run.
+ *
+ * Rejected once, for a real reason: the common failure of this feature is
+ * groups that multiply and are never cleaned up. Three rules keep that from
+ * happening here, and they are the whole implementation.
+ *
+ *  1. One group id per run, not per tab. `use_tab` opening five pages produces
+ *     one group, because the id is only allocated when it is null.
+ *  2. A remembered id is checked to still exist before it is reused. Chrome
+ *     deletes a group when its last tab closes, so a stale id would otherwise
+ *     throw on every later open for the rest of the session.
+ *  3. Only tabs the agent itself opened ever join. A group is a change to
+ *     someone's window, and pulling in the tab the human already had open —
+ *     the one they were reading when they pressed Run — is not ours to make.
+ *
+ * There is deliberately no cleanup path: Chrome removes an empty group on its
+ * own, and a run's tabs are the user's to keep or close.
+ */
+let group = null;
+let groupName = "";
+
+/** Name the group the next opened tabs go into. A fresh Run; replies keep it. */
+export function nameRun(title) {
+  group = null;
+  groupName = String(title ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 32);
+}
+
+async function joinGroup(id) {
+  if (!groupName) return;
+  try {
+    // Rule 2. `get` on a group Chrome has already dropped rejects, which is the
+    // check — there is no "does this group exist" call.
+    if (group !== null && !(await chrome.tabGroups.get(group).catch(() => null))) group = null;
+    const fresh = group === null;
+    group = await chrome.tabs.group(fresh ? { tabIds: [id] } : { groupId: group, tabIds: [id] });
+    if (fresh) await chrome.tabGroups.update(group, { title: groupName, color: "green" });
+  } catch (err) {
+    // Never fatal: the page is open and drivable, it is just loose in the tab
+    // strip. Failing the tool call over cosmetics would lose the whole run.
+    console.log(`endo: could not group tab ${id} — ${err.message}`);
+  }
+}
+
 /** The same list as data, for the panel's @-menu. One filter, one definition. */
 export async function drivable() {
   return (await chrome.tabs.query({ currentWindow: true })).filter((t) => DRIVABLE.test(t.url ?? ""));
@@ -281,6 +328,8 @@ export async function useTab(id, url, options) {
   if (url && !DRIVABLE.test(url)) throw undrivable(url);
   const target = url ? (await chrome.tabs.create({ url, active: true })).id : id;
   if (target == null) throw new Error("use_tab needs an id from tabs(), or a url to open");
+  // Only a tab we just opened — see the rules on joinGroup().
+  if (url) await joinGroup(target);
   if (!url) {
     const tab = await chrome.tabs.get(target);
     if (!DRIVABLE.test(tab.url ?? "")) throw undrivable(`tab ${target} (${tab.url})`);
