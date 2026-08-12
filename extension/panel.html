@@ -589,6 +589,10 @@
       */
       .composer {
         flex: none;
+        /* The @-menu anchors to this rather than to the viewport: the composer
+           grows with the textarea and the footer is a different height in every
+           state, so any fixed offset up from the bottom edge would drift. */
+        position: relative;
         margin: 0 10px 12px;
         border: 1px solid var(--line);
         border-radius: var(--r-lg);
@@ -795,6 +799,31 @@
       #gate-deny { border-color: var(--line); color: var(--text); }
       #gate-deny:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: transparent; }
 
+      /* ---- the @-menu: point the agent at another tab ------------------------ */
+      /*
+        Same sheet as History, same rows, same selected dot — it is the same
+        gesture (pick one of a short list of things you have open), so it would
+        be strange for it to look like a different kind of object.
+      */
+      #mentions {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: calc(100% + 6px);
+        z-index: 20;
+        max-height: 42vh;
+        overflow: auto;
+        padding: 5px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--raise);
+        box-shadow: var(--shadow-md);
+        scrollbar-width: thin;
+        scrollbar-color: var(--line) transparent;
+        animation: rise var(--slow) var(--ease) both;
+      }
+      #mentions:not(.show) { display: none; }
+
       /* ---- footer disclosures ------------------------------------------------ */
       footer {
         flex: none;
@@ -979,7 +1008,7 @@
     <div id="chat" role="log" aria-live="polite">
       <div id="empty">
         <svg class="mark" aria-hidden="true"><use href="#i-mark" /></svg>
-        <p>I can read and act on the page you are looking at: click, type, fill forms, move between tabs.</p>
+        <p>I can read and act on the page you are looking at: click, type, fill forms, move between tabs. Type <b>@</b> to point me at another open tab.</p>
         <div class="label">Try</div>
         <button class="seed">Summarise this page in five bullets</button>
         <button class="seed">Find the pricing page and compare the tiers in a table</button>
@@ -1013,6 +1042,9 @@
     </div>
 
     <div class="composer">
+      <!-- Filled by panel.js while you are typing an @-mention. Ahead of the
+           textarea in the DOM so it reads before the box it belongs to. -->
+      <div id="mentions" role="listbox" aria-label="Open tabs"></div>
       <textarea id="prompt" rows="2" spellcheck="false"
         placeholder="Ask it to do something on this page…"></textarea>
       <div class="controls">

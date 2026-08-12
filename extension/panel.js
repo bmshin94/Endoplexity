@@ -3,6 +3,7 @@ import { measure, selftest } from "./selftest.js";
 import { runTool } from "./tools.js";
 import * as ui from "./transcript.js";
 import { fresh, pack, startNew, titleOf } from "./sessions.js";
+import { block as mentionBlock, label as mentionLabel } from "./mentions.js";
 
 // No token anywhere in here on purpose. The bridge identifies this panel by the
 // Origin Chrome puts on the upgrade, which page script cannot forge — see the
@@ -54,6 +55,7 @@ const historyEl = document.getElementById("history");
 const historyOpen = document.getElementById("history-open");
 const viewingBar = document.getElementById("viewing");
 const toCurrentBtn = document.getElementById("to-current");
+const mentionsEl = document.getElementById("mentions");
 
 ui.mount(chatEl, stepEl, logEl, () => save());
 
@@ -513,10 +515,16 @@ async function runTask(resume = false) {
   // Only on a fresh Run: there is no transcript and no refs yet, so re-binding
   // costs nothing. A reply must not — mid-conversation the agent is holding
   // refs, and they belong to the tab it has been looking at all along.
+  //
+  // `open: false`: re-binding must never CREATE a tab. With nothing drivable
+  // open (a fresh window is one chrome://newtab), Run used to open an active
+  // about:blank and drop you on it — a black page under a "started debugging
+  // this browser" banner — for the whole of the model's first turn. The first
+  // tool call opens the tab it needs, and navigates it immediately.
   if (!resume) {
     try {
       await cdp.detach();
-      await cdp.attach();
+      await cdp.attach(undefined, { open: false });
     } catch (err) {
       // Not fatal: runTool attaches lazily on the first call, so the task can
       // still run — it just loses the page context below.
@@ -529,9 +537,14 @@ async function runTask(resume = false) {
   // know a tab is even open. Skipped on a reply: it is already in the
   // transcript, and the agent has been looking at that page ever since.
   const page = resume ? null : await cdp.currentPage().catch(() => null);
+  // Unlike the page line, this is NOT skipped on a reply: a tab mentioned in a
+  // follow-up is new information, and the transcript cannot already hold it.
+  const pointed = mentionBlock(prompt, mentions);
   // The bridge gets `sent`; the transcript below shows `prompt` alone, so the
   // conversation reads as what the human said rather than as plumbing.
-  const sent = [page && `The page you are on is "${page.title}" — ${page.url}`, prompt].filter(Boolean).join("\n\n");
+  const sent = [page && `The page you are on is "${page.title}" — ${page.url}`, pointed, prompt]
+    .filter(Boolean)
+    .join("\n\n");
   // The model rides along, but the bridge overrules it on a reply: a claude
   // transcript cannot be handed to cursor-agent.
   if (!send({ type: "task", prompt: sent, model: modelEl.value, mode: modeEl.value, resume })) {
@@ -573,6 +586,109 @@ stopBtn.addEventListener("click", () => {
   send({ type: "stop" });
 });
 
+/* ---- @-mentioning a tab ----------------------------------------------------
+ *
+ * Comet's gesture: type @, pick one of the tabs you have open, and the agent is
+ * told about it. Here that means the tab's id reaches the model in the shape
+ * `use_tab` takes — which also spends the turn the agent would otherwise burn
+ * calling `tabs` just to discover ids.
+ *
+ * The mentions themselves live in mentions.js; everything below is the menu.
+ */
+
+/** Tabs picked in this panel. Never cleared: block() drops any whose text is gone. */
+let mentions = [];
+/** The tabs currently on offer, in the order they are drawn. */
+let offered = [];
+/** Index of the `@` being completed, or -1 when the menu is closed. */
+let mentionAt = -1;
+let mentionPick = 0;
+/** Guards against a slower tabs.query landing after a newer one. */
+let mentionSeq = 0;
+
+// Only at a word boundary: an email address in a form-filling task is a far
+// commoner thing to type than a mention, and `foo@bar` must not open a menu.
+// No spaces in the query — otherwise the menu stays open across a whole
+// sentence, matching less and less until it looks broken.
+const MENTION = /(?:^|\s)@([^\s@]*)$/;
+
+function closeMentions() {
+  mentionAt = -1;
+  offered = [];
+  mentionsEl.classList.remove("show");
+}
+
+function drawMentions() {
+  mentionsEl.replaceChildren();
+  if (!offered.length) {
+    const none = document.createElement("div");
+    none.className = "hempty";
+    none.textContent = "no other tabs match";
+    return void mentionsEl.appendChild(none);
+  }
+  offered.forEach((tab, index) => {
+    const row = document.createElement("button");
+    row.className = index === mentionPick ? "hrow on" : "hrow";
+    row.setAttribute("role", "option");
+    const title = document.createElement("span");
+    title.className = "htitle";
+    title.textContent = tab.title || tab.url;
+    const host = document.createElement("span");
+    host.className = "hwhen";
+    host.textContent = URL.parse(tab.url ?? "")?.hostname ?? "";
+    row.append(title, host);
+    // mousedown, prevented: a click that first blurs the textarea would close
+    // the menu out from under itself and lose the caret the label goes at.
+    row.addEventListener("mousedown", (event) => event.preventDefault());
+    row.addEventListener("click", () => pickMention(tab));
+    mentionsEl.appendChild(row);
+  });
+}
+
+async function openMentions(query, at) {
+  const seq = ++mentionSeq;
+  const q = query.toLowerCase();
+  const open = await cdp.drivable().catch(() => []);
+  if (seq !== mentionSeq) return; // a newer keystroke already asked
+  mentionAt = at;
+  mentionPick = 0;
+  offered = open.filter((tab) => !q || `${tab.title ?? ""} ${tab.url ?? ""}`.toLowerCase().includes(q));
+  drawMentions();
+  mentionsEl.classList.add("show");
+}
+
+function moveMention(by) {
+  if (!offered.length) return;
+  mentionPick = (mentionPick + by + offered.length) % offered.length;
+  drawMentions();
+  mentionsEl.children[mentionPick]?.scrollIntoView({ block: "nearest" });
+}
+
+function pickMention(tab) {
+  const label = mentionLabel(tab);
+  const before = promptEl.value.slice(0, mentionAt);
+  const after = promptEl.value.slice(promptEl.selectionStart);
+  promptEl.value = `${before}@${label} ${after}`;
+  const caret = before.length + label.length + 2;
+
+  // Keyed by id, so mentioning the same tab twice does not send it twice — the
+  // second `@label` in the text simply matches the entry already here.
+  if (!mentions.some((m) => m.id === tab.id)) {
+    mentions.push({ id: tab.id, title: tab.title ?? "", url: tab.url ?? "", label });
+  }
+  closeMentions();
+  promptEl.focus();
+  promptEl.setSelectionRange(caret, caret);
+}
+
+promptEl.addEventListener("input", () => {
+  const found = MENTION.exec(promptEl.value.slice(0, promptEl.selectionStart));
+  if (!found) return closeMentions();
+  openMentions(found[1], promptEl.selectionStart - found[1].length - 1);
+});
+// Safe because the rows never take focus: their mousedown is prevented.
+promptEl.addEventListener("blur", () => closeMentions());
+
 // Enter starts a fresh task; ctrl/cmd+Enter answers the agent; shift+Enter is a
 // newline. Reply used to win the key outright whenever it was live, reasoning
 // that the reflex after a question is to type and hit Enter. Measured
@@ -581,6 +697,17 @@ stopBtn.addEventListener("click", () => {
 // previous conversation instead. It voided two cost measurements. The asymmetry
 // decides it: a fresh Run is at worst more expensive, a wrong Reply is wrong.
 promptEl.addEventListener("keydown", (event) => {
+  // The menu gets the keys first, or Enter picks nothing and fires a task with
+  // a half-typed `@verc` in it.
+  if (mentionAt >= 0) {
+    if (event.key === "Escape") return event.preventDefault(), closeMentions();
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      return event.preventDefault(), moveMention(event.key === "ArrowDown" ? 1 : -1);
+    }
+    if (event.key === "Enter" && !event.shiftKey && offered.length) {
+      return event.preventDefault(), pickMention(offered[mentionPick]);
+    }
+  }
   if (event.key !== "Enter" || event.shiftKey) return;
   const resume = event.ctrlKey || event.metaKey;
   // Only guarded for a fresh run — a ctrl+Enter with nothing to reply to falls

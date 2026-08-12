@@ -65,6 +65,11 @@ None of this is doable from a terminal; all of it is cheap once the extension is
 10. **The P11b restyle in a real side panel** — the new icon in Chrome's toolbar, and the empty
     state actually on screen on a fresh session (it was verified headless, where the composer
     and the seed rows are real but Chrome's own panel chrome around them is not). *(P11b)*
+11. **`@`-mention a tab in a real run** — the menu is verified headless, but nothing has yet
+    watched a model receive an `id N` it did not ask for and call `use_tab` with it. That is the
+    whole claim of the feature. *(P11c)*
+12. **Run from a window with no drivable tab** (one fresh New Tab page) and confirm you are not
+    taken anywhere until the agent actually navigates. *(P11c)*
 
 ### Phase 11 — the two features left
 
@@ -92,9 +97,9 @@ None of this is doable from a terminal; all of it is cheap once the extension is
 
 ### Still queued, unscheduled
 
-Cheaper stale-ref recovery than a whole page; `@`-mentioning a tab as context (Comet has it;
-our fresh-Run re-attach covers the failure that actually bit us); Chrome tab groups (rejected
-for now — Claude's version drew four bug reports for groups that multiply and never clean up).
+Cheaper stale-ref recovery than a whole page; Chrome tab groups (rejected for now — Claude's
+version drew four bug reports for groups that multiply and never clean up); styled mention
+chips, if plain `@label` text in the box turns out to read as ordinary prose.
 
 ---
 
@@ -222,6 +227,28 @@ for now — Claude's version drew four bug reports for groups that multiply and 
     now exempt (they are the panel talking about itself, not conversation) and the redundant
     greeting note is deleted. **130 → 132 tests.**
 
+- **P11c — `@`-mention a tab, and Run stops yanking you to a blank page (2026-08-12).**
+  - **The blank-tab yank.** `pickTab()` opened an `active: true` `about:blank` and the panel
+    re-attaches on every fresh Run — so from a window holding only a New Tab page (chrome:// is
+    not drivable), pressing Run dropped you on a black page under a "started debugging this
+    browser" banner and left you there for the model's whole first turn. **Opening a tab is now
+    only for a caller that is about to USE one**: `attach(target, { open: false })` returns null
+    instead, the panel passes it, and the first tool call opens the tab — which `navigate` then
+    fills in the same breath. The `where` chip reads "no tab attached yet" until it does.
+  - **`@`-mention.** Type `@` in the composer, get the drivable tabs in the window (same
+    `DRIVABLE` filter as the `tabs` tool, now shared through `cdp.drivable()`), filter by typing,
+    arrows/Enter or click to pick. **A mention carries no page content** — it carries the tab's
+    **id**, in the exact line shape `tabs` already returns, so `use_tab` is the obvious next call
+    and the agent skips the `tabs` turn it would otherwise spend discovering ids. Inlining the
+    other tab's text was rejected twice over: snapshotting an unattached tab means detaching and
+    killing every live ref, and the page would then be re-sent on every later turn read or not.
+  - **The composer stays a plain `<textarea>`.** A mention is the literal text `@Title`, and
+    `mentions.js` reconciles by asking whether that text is still in the box — backspacing a
+    mention un-mentions it, with no caret bookkeeping and no chip widget. Sent on replies too,
+    unlike the page line: a tab named in a follow-up is new information.
+  - Verified headless in a true 360px iframe, both themes: menu opens on `@`, filters to one row
+    on `@netl`, Enter inserts the label and closes it, horizontal overflow 0. **132 → 140 tests.**
+
 ---
 
 ## Decisions locked
@@ -249,6 +276,10 @@ for now — Claude's version drew four bug reports for groups that multiply and 
 - **Document returns are capped and paged, like snapshots.** A tool return crosses the model's
   context on every LATER turn too, so one 40k-character spreadsheet is paid ten times over a
   ten-turn task
+- **A mention hands over an id, not a page.** `@`-ing a tab tells the model the tab exists and
+  what its id is, in the shape `use_tab` takes; the model decides whether that page is worth a
+  turn. Inlining the content instead would detach from the attached tab to snapshot it — killing
+  every ref the agent holds — and then re-send a whole page on every later turn, read or not
 - **A fresh Run re-attaches to the active tab; a Reply never does.** "This page" can only mean
   the one you are looking at when you press Run, and a fresh Run holds no refs and no
   transcript, so re-binding is free. Mid-conversation it would destroy refs the agent is using
@@ -277,6 +308,19 @@ for now — Claude's version drew four bug reports for groups that multiply and 
 ## Gotchas
 
 - **Never rotate `.endo-token` or `.endo-files.json` without asking.**
+- **Opening a tab is a side effect, and the panel does it on every Run.** `pickTab()` created an
+  active `about:blank` whenever nothing drivable was open, and the pre-Run re-attach called it
+  before the model had asked to go anywhere — so Run from a fresh window meant staring at a black
+  page under a debugger banner for a whole turn. Same rule as `currentPage()`, which was already
+  written this way: **building a prompt must not have side effects.** Only a caller about to
+  drive a tab may open one.
+- **An `@` menu must not fire inside an email address.** Form-filling tasks type addresses far
+  more often than mentions, so the trigger is anchored to a word boundary (`(?:^|\s)@`) and the
+  query takes no spaces — an unanchored one turned `name@example.com` into a tab picker, and a
+  space-tolerant query kept the menu open across a whole sentence, matching less and less.
+- **A click on a menu row blurs the textarea first.** The blur handler closes the menu, so the
+  click lands on nothing and the caret position the label was going to is already gone. The rows
+  `preventDefault()` on `mousedown`, which is what makes a plain `blur` → close safe.
 - **claude's `PRELOAD` list and mcp.ts's `registerTool` calls are two hand-written lists that
   must agree.** P7 took the tool count 7 → 13 and left the briefing at 7, so six tools each cost
   an extra ToolSearch round trip — a whole turn — for two phases and every measurement in them.

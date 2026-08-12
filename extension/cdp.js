@@ -110,9 +110,16 @@ const DRIVABLE = /^(https?|file):/;
 const findDrivable = (tabs) =>
   tabs.find((t) => t.active && DRIVABLE.test(t.url ?? "")) ?? tabs.find((t) => DRIVABLE.test(t.url ?? ""));
 
-async function pickTab() {
+async function pickTab(open) {
   const usable = findDrivable(await chrome.tabs.query({ currentWindow: true }));
   if (usable) return usable.id;
+  // Nothing drivable is open, and opening one is only right for a caller that
+  // is about to USE it. The panel re-attaches on every fresh Run, before the
+  // model has done anything — creating an active tab there yanks you off the
+  // page you were on to stare at a blank one with a debugger banner for the
+  // whole first turn. The first tool call opens it instead, and navigate()
+  // lands a real page on it in the same breath.
+  if (!open) return null;
   // No wait: about:blank is already loaded, and navigate() waits for its own.
   const opened = await chrome.tabs.create({ url: "about:blank", active: true });
   return opened.id;
@@ -134,12 +141,20 @@ export async function currentPage() {
   return tab ? { url: tab.url ?? "", title: tab.title ?? "" } : null;
 }
 
-/** Attach to a tab (defaults to a drivable one) and wire up OOPIF discovery. */
-export async function attach(target) {
+/**
+ * Attach to a tab (defaults to a drivable one) and wire up OOPIF discovery.
+ *
+ * `open: false` means "attach only if there is already something to drive" —
+ * it returns null instead of opening a tab. See pickTab().
+ */
+export async function attach(target, { open = true } = {}) {
   if (tabId !== null) throw new Error(`already attached to tab ${tabId} — detach() first`);
 
-  const id = target ?? (await pickTab());
-  if (id == null) throw new Error("no tab to drive");
+  const id = target ?? (await pickTab(open));
+  if (id == null) {
+    if (!open) return null;
+    throw new Error("no tab to drive");
+  }
 
   await chrome.debugger.attach({ tabId: id }, "1.3");
   tabId = id;
@@ -230,8 +245,13 @@ export async function go(direction, options) {
  * Filtered by DRIVABLE for the same reason attach() is: offering a chrome://
  * tab the agent then cannot attach to is worse than not listing it.
  */
+/** The same list as data, for the panel's @-menu. One filter, one definition. */
+export async function drivable() {
+  return (await chrome.tabs.query({ currentWindow: true })).filter((t) => DRIVABLE.test(t.url ?? ""));
+}
+
 export async function tabs() {
-  const open = (await chrome.tabs.query({ currentWindow: true })).filter((t) => DRIVABLE.test(t.url ?? ""));
+  const open = await drivable();
   if (!open.length) return "no drivable tabs open";
   return open.map((t) => `${t.id === tabId ? "*" : " "} id ${t.id} — "${t.title ?? ""}" ${t.url}`).join("\n");
 }

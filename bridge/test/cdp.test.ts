@@ -8,9 +8,10 @@ import assert from "node:assert/strict";
 // and a second stub would never be wired up, because the listeners are only
 // registered on the first import.
 //
-// Scope: dead-OOPIF reaping only. Everything else in cdp.js is verified live by
-// `endo.selftest()`, which drives a real Chrome; a stub deep enough to test
-// clicking would only be testing the stub.
+// Scope: dead-OOPIF reaping, and which caller is allowed to OPEN a tab.
+// Everything else in cdp.js is verified live by `endo.selftest()`, which drives
+// a real Chrome; a stub deep enough to test clicking would only be testing the
+// stub.
 
 type Handler = (source: { tabId: number }, method: string, params: unknown) => void;
 
@@ -21,6 +22,9 @@ let fail: (sessionId: string, method: string) => string | null = () => null;
 /** Every sendCommand, so a reaped session can be shown to cost nothing later. */
 const calls: { sessionId: string; method: string }[] = [];
 let onEvent: Handler = () => {};
+/** Set per test: what the window has open, and whether anyone opened a tab. */
+let openTabs = [{ id: 1, url: "https://example.test/", active: true }];
+let created = 0;
 
 (globalThis as unknown as { chrome: unknown }).chrome = {
   debugger: {
@@ -38,7 +42,8 @@ let onEvent: Handler = () => {};
   },
   tabs: {
     get: async () => ({ id: 1, url: "https://example.test/", title: "t" }),
-    query: async () => [{ id: 1, url: "https://example.test/", active: true }],
+    query: async () => openTabs,
+    create: async () => ({ id: (created++, 2) }),
     onUpdated: { addListener: () => {}, removeListener: () => {} },
   },
 };
@@ -81,6 +86,27 @@ test("a live frame having a bad moment is kept, and still says so", async () => 
   const text = await cdp.snapshot();
   assert.match(text, /unavailable/, "a recoverable error still belongs in the page");
   assert.equal(cdp.state().frames.length, 2, "forgetting a live frame would lose it for the rest of the run");
+
+  await cdp.detach();
+});
+
+test("with nothing drivable open, only the caller that will USE a tab opens one", async () => {
+  fail = () => null;
+  // A fresh window: one chrome://newtab, which takes neither debugger nor navigation.
+  openTabs = [{ id: 1, url: "chrome://newtab/", active: true }];
+  created = 0;
+
+  // The panel's pre-Run re-attach. Opening an active blank tab here is what
+  // dropped the user on a black page under a debugger banner for the whole
+  // first turn, before the model had asked to go anywhere.
+  assert.equal(await cdp.attach(undefined, { open: false }), null, "nothing to drive, so nothing attached");
+  assert.equal(created, 0, "the re-attach must not create a tab");
+  assert.equal(await cdp.currentPage(), null, "and the prompt names no page, because there is none");
+
+  // The first tool call still gets one — that is where a tab is actually needed,
+  // and navigate() puts a real page on it immediately.
+  assert.equal(await cdp.attach(), 2, "the tool layer opens the tab it is about to drive");
+  assert.equal(created, 1);
 
   await cdp.detach();
 });
