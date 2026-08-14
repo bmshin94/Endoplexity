@@ -98,9 +98,23 @@ function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     syncLive();
-    chrome.storage.local.set({ sessions });
+    store();
     drawHistory();
   }, 400);
+}
+
+// chrome.storage.local rejects once the history outgrows the 10MB quota, and an
+// unhandled rejection here is invisible: the transcript just quietly stops
+// surviving window switches, which is the one thing sessions exist to do. Said
+// once — a failing write repeats every 400ms and a note per write is its own bug.
+let storageWarned = false;
+function store() {
+  chrome.storage.local.set({ sessions }).catch((err) => {
+    console.warn("endo: history not saved —", err);
+    if (storageWarned) return;
+    storageWarned = true;
+    ui.note("history could not be saved — storage is full, so older sessions may not survive a reload", true);
+  });
 }
 
 const when = (at) =>
@@ -181,7 +195,7 @@ function newSession() {
   dropBridgeSession();
   resumable = false;
   setBusy(false);
-  chrome.storage.local.set({ sessions });
+  store();
   drawHistory();
   promptEl.focus();
 }
@@ -362,8 +376,10 @@ function show(event) {
     }
     return ui.chip(cost(event));
   }
-  if (event.type === "done" && event.error) return ui.note(`failed — ${event.error}`);
-  if (event.type === "failed") return ui.note(`failed — ${event.error}`);
+  // Red, not the housekeeping grey every other note uses: a run that ended in
+  // failure is the one note that must not read like "reconnected".
+  if (event.type === "done" && event.error) return ui.note(`failed — ${event.error}`, true);
+  if (event.type === "failed") return ui.note(`failed — ${event.error}`, true);
 }
 
 // ---- connection -------------------------------------------------------------
@@ -634,6 +650,8 @@ function closeMentions() {
   mentionAt = -1;
   offered = [];
   mentionsEl.classList.remove("show");
+  promptEl.setAttribute("aria-expanded", "false");
+  promptEl.removeAttribute("aria-activedescendant");
 }
 
 function drawMentions() {
@@ -642,12 +660,18 @@ function drawMentions() {
     const none = document.createElement("div");
     none.className = "hempty";
     none.textContent = "no other tabs match";
+    // replaceChildren just removed the row this pointed at.
+    promptEl.removeAttribute("aria-activedescendant");
     return void mentionsEl.appendChild(none);
   }
   offered.forEach((tab, index) => {
     const row = document.createElement("button");
     row.className = index === mentionPick ? "hrow on" : "hrow";
     row.setAttribute("role", "option");
+    // The id is what aria-activedescendant points at, so the highlighted row is
+    // announced without focus ever leaving the textarea.
+    row.id = `mention-${index}`;
+    row.setAttribute("aria-selected", String(index === mentionPick));
     const title = document.createElement("span");
     title.className = "htitle";
     title.textContent = tab.title || tab.url;
@@ -661,6 +685,8 @@ function drawMentions() {
     row.addEventListener("click", () => pickMention(tab));
     mentionsEl.appendChild(row);
   });
+  // Set here rather than in moveMention, so opening and arrowing both land it.
+  promptEl.setAttribute("aria-activedescendant", `mention-${mentionPick}`);
 }
 
 async function openMentions(query, at) {
@@ -673,6 +699,7 @@ async function openMentions(query, at) {
   offered = open.filter((tab) => !q || `${tab.title ?? ""} ${tab.url ?? ""}`.toLowerCase().includes(q));
   drawMentions();
   mentionsEl.classList.add("show");
+  promptEl.setAttribute("aria-expanded", "true");
 }
 
 function moveMention(by) {

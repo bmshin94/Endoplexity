@@ -34,10 +34,20 @@ export function titleOf(session) {
   return text.length > 64 ? `${text.slice(0, 63)}…` : text;
 }
 
-const cut = (value) =>
-  typeof value === "string" && value.length > MAX_FIELD
-    ? `${value.slice(0, MAX_FIELD)}\n… (truncated — the full text was in the run)`
-    : value;
+// A tool row's `args` is an OBJECT, so a string-only clip skipped it entirely
+// and one `type` call carrying a pasted cover letter went to storage whole —
+// which is exactly the unbounded growth MAX_FIELD exists to prevent. Recursing
+// keeps the shape restore() expects and clips the strings inside it.
+const cut = (value) => {
+  if (typeof value === "string") {
+    return value.length > MAX_FIELD
+      ? `${value.slice(0, MAX_FIELD)}\n… (truncated — the full text was in the run)`
+      : value;
+  }
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(cut);
+  return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, cut(inner)]));
+};
 
 /** The storable form: the tail of the entries, with the long strings clipped. */
 export const pack = (entries) =>

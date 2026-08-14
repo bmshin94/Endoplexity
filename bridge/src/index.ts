@@ -29,7 +29,7 @@ const MODELS: Record<string, typeof runClaude> = {
 const HOST = "127.0.0.1"; // never 0.0.0.0 — this socket can drive a logged-in browser
 // Overridable only so a second instance can be smoke-tested without evicting the
 // one your panel is talking to. The extension always dials 8787.
-const PORT = Number(process.env.COMET_PORT ?? 8787);
+const PORT = Number(process.env.ENDO_PORT ?? 8787);
 const TOKEN_PATH = fileURLToPath(new URL("../../.endo-token", import.meta.url));
 
 function loadToken(): string {
@@ -119,13 +119,15 @@ const sessionOf = (event: Record<string, unknown>): string | undefined =>
 // session in the log is worse than no log at all.
 const FAKE_XML = /<function_calls>|<invoke name=/;
 
-const usedTools = (event: Record<string, unknown>) =>
+const usedTools = (event: Record<string, unknown>) => {
   // cursor reports tool calls as their own event; claude nests them in the message
-  event.type === "tool_call" ||
-  (event.type === "assistant" &&
-    ((event.message as { content?: { type?: string }[] } | undefined)?.content ?? []).some(
-      (part) => part.type === "tool_use",
-    ));
+  if (event.type === "tool_call") return true;
+  // `?? []` does not fire on a truthy non-array, so a string `content` used to
+  // reach `.some` and throw. Ask what it IS, not whether it is missing.
+  const content = (event.message as { content?: unknown } | undefined)?.content;
+  return event.type === "assistant" && Array.isArray(content) &&
+    content.some((part) => (part as { type?: string })?.type === "tool_use");
+};
 
 function startTask(
   prompt: unknown,
@@ -243,6 +245,9 @@ wss.on("connection", (ws) => {
     } catch {
       return; // ponytail: malformed frames are dropped, no error channel needed until there is a protocol
     }
+    // `"null"` and `"7"` parse cleanly and are not frames — reading .type off
+    // either throws inside a ws handler, which takes the process with it.
+    if (!msg || typeof msg !== "object") return;
     if (msg.type === "ping") ws.send(JSON.stringify({ type: "pong", at: Date.now() }));
     else if (msg.type === "tool-result") settle(msg);
     else if (msg.type === "gate-reply") settleGate(msg);
@@ -272,6 +277,14 @@ wss.on("connection", (ws) => {
     }, ORPHAN_GRACE_MS);
   });
 });
+
+// The bridge is started by a Startup .vbs with no window, so dying is silent:
+// the panel just says "not connected" forever and the reason is in a log nobody
+// knows to open. Staying up with one wedged task beats that, every time. This is
+// a backstop, not an error channel — a throw reaching here is a bug to fix.
+for (const fatal of ["uncaughtException", "unhandledRejection"] as const) {
+  process.on(fatal, (err) => console.error(`${fatal}:`, err));
+}
 
 // Autostart means a second `npm start` is a normal mistake, not a rare one, and
 // an unhandled EADDRINUSE prints a stack trace that reads like a broken install.

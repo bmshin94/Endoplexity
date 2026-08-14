@@ -89,13 +89,22 @@ are worth stating plainly.
   similar hit an approval gate that lives in the bridge — never in a prompt — so
   nothing the model says can widen its own permissions. Silence denies. A
   disconnected panel denies.
+  **Know what this check actually is:** it matches the clicked element's visible
+  label against a list of English words (`submit`, `pay`, `delete`, `confirm`, …).
+  It is a label heuristic, not an understanding of the page. A button labelled in
+  another language, worded unusually ("Finish", "Yes, place it"), or carrying an
+  icon and no text will *not* be caught. Use `watch` mode where that matters.
 - **Three autonomy modes** (`watch` / `normal` / `trust`), chosen in the panel and
   enforced in the bridge. An absent or unrecognised mode is `normal`, never
   `trust`: it fails closed. `trust` disables the gate, so the panel shows it in
   red the entire time it is set.
-- **Uploads resolve a configured key, never a model-supplied path.** `DOM.setFileInputFiles`
+- **Files resolve a configured key, never a model-supplied path.** `DOM.setFileInputFiles`
   runs in the browser process and can read anything, so the model never sees a
-  filesystem path at all.
+  filesystem path at all — it names a key you put in `.endo-files.json`.
+  Note the asymmetry: `upload` hands a file to a page without the model seeing
+  its contents, but `read_file` puts those contents *in the model's context*, and
+  from there they can be typed into a page. That allow-list is the whole
+  boundary, so put only what you mean to share in it.
 
 ## What it costs
 
@@ -113,10 +122,13 @@ subscription it is covered by the subscription, which is the entire point. The
 same task measured flat against a 5-tool baseline while carrying ~18k tokens
 more tool schema, so going from 5 tools to 13 cost nothing per run.
 
+Page returns were later cut **3.8x** by sending a page once and then only the
+lines that changed: 119,856 → 31,626 tokens on a ten-turn Hacker News task.
+
 ## Status
 
 Early — `v0.0.1`, and honest about it. The tool layer, the approval gate, session
-continuity and the panel are built and tested (106 unit tests, plus an in-panel
+continuity and the panel are built and tested (155 unit tests, plus an in-panel
 self-test: open the panel's console and run `await endo.selftest()`).
 
 Known gaps:

@@ -1,5 +1,12 @@
 # Endoplexity — agentic browser control on your own subscriptions
 
+> **This is the original design document, kept as it was written.** The build
+> diverged from it in places — most visibly, the extension is plain HTML/JS with
+> no build step, not React + Vite, and there is no `shared/` directory. For what
+> the software actually is today, read `PRODUCT.md`, `DESIGN.md` and
+> `PHASE-STATE.md`. This file is kept because the reasoning is still the
+> reasoning, not because the details still match.
+
 ## Context
 
 **The problem.** Perplexity Comet and every open-source clone of it (nanobrowser 13.5k⭐, browser-use, BrowserKing, tabagent, webpilot) share one flaw: they need an API key and burn metered credits. Meanwhile two agentic loops are already paid for and idle on this machine — Claude (Pro or Max) via the `claude` CLI, and Cursor (Composer 2.5 / Grok 4.5) via `cursor-agent`. Both run headless, both emit structured NDJSON, both speak MCP.
@@ -8,7 +15,7 @@
 
 **Outcome.** A Chrome side panel docked in the real, logged-in browser. Type "apply to this job with my resume"; watch it read the page, fill fields, upload the resume, page through, pause for one click before submitting. Model picker switches Claude ↔ Cursor. Zero API spend.
 
-**Repo state.** `c:\Users\venni\Endoplexity` is empty. Greenfield, not yet a git repo.
+**Repo state.** Greenfield — an empty directory, not yet a git repo.
 
 **Decisions locked** (all four confirmed): Chrome side panel + local bridge · `chrome.debugger` CDP from the extension · auto-run with gates on irreversible actions · v1 = form-fill, then multi-tab research.
 

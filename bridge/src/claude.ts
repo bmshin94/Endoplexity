@@ -180,11 +180,12 @@ export function runClaude(
   // readline does the line framing — NDJSON arrives split across chunks.
   createInterface({ input: child.stdout }).on("line", (line) => {
     if (!line.trim()) return;
-    try {
-      onEvent(JSON.parse(line));
-    } catch {
-      onEvent({ type: "stray", text: line });
-    }
+    // Parsing is not proof of an event: `null`, a number and a string are all
+    // valid JSON, and everything downstream reads properties off this. A bare
+    // `null` line used to reach sessionOf() and kill the whole bridge.
+    let event;
+    try { event = JSON.parse(line); } catch {}
+    onEvent(event && typeof event === "object" ? event : { type: "stray", text: line });
   });
 
   let stderr = "";

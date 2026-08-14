@@ -105,9 +105,9 @@ export function assistant(md) {
   add(el);
 }
 
-export const note = (text) => {
-  record({ k: "note", text: String(text ?? "") });
-  add(block("note", text));
+export const note = (text, bad = false) => {
+  record({ k: "note", text: String(text ?? ""), bad });
+  add(block(bad ? "note bad" : "note", text));
 };
 
 export const chip = (text) => {
@@ -184,6 +184,10 @@ export function tool(name, args, label) {
   // `running` is what puts the live node on the rail — the whole reason the row
   // goes up before the call rather than after it.
   row.className = "tool running";
+  // #chat is a live region, so without this a twenty-call run is twenty
+  // announcements. The trace recedes visually through size and weight; this is
+  // the same decision for a screen reader. #step still narrates the current one.
+  row.setAttribute("aria-live", "off");
   const summary = document.createElement("summary");
   summary.textContent = summarise(name, args, label);
   const body = document.createElement("pre");
@@ -276,7 +280,7 @@ export function restore(entries) {
     for (const entry of entries ?? []) {
       if (entry.k === "user") user(entry.text);
       else if (entry.k === "assistant") assistant(entry.md);
-      else if (entry.k === "note") note(entry.text);
+      else if (entry.k === "note") note(entry.text, entry.bad);
       else if (entry.k === "chip") chip(entry.text);
       else if (entry.k === "gate") {
         gateRow(entry.action);

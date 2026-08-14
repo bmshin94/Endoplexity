@@ -41,6 +41,19 @@ test("pack clips long strings — a stored page snapshot would blow the quota", 
   assert.equal(entry.name, "snapshot");
 });
 
+test("pack clips strings INSIDE a tool's args — the object slipped the clip entirely", () => {
+  // A `type` call carrying a pasted cover letter went to storage whole, because
+  // the clip only looked at string fields and `args` is an object. Twenty
+  // sessions of those is how the 10MB quota gets hit while every field
+  // individually looks capped.
+  const [entry] = pack([
+    { k: "tool", name: "type", args: { ref: "@f0e3", text: "x".repeat(5000) } },
+  ]) as { args: { ref: string; text: string } }[];
+  assert.ok(entry.args.text.length < MAX_FIELD + 60);
+  // The shape survives — restore() reads args.ref off this.
+  assert.equal(entry.args.ref, "@f0e3");
+});
+
 test("pack keeps the TAIL of a long run — the recent turns are the useful ones", () => {
   const entries = Array.from({ length: MAX_ENTRIES + 25 }, (_, i) => ({ k: "note", text: String(i) }));
   const packed = pack(entries) as { text: string }[];

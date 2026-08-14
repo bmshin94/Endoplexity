@@ -79,7 +79,10 @@ Cheap once the extension is loaded. Items 3 and 5 now run from a terminal via `n
 1. **Load `extension/` unpacked** and confirm Chrome's id is `lblllkbcfcaecfpefighocaefnfkebjj`.
    A unit test recomputing our own formula cannot catch a disagreement with Chrome. *(P9)*
 2. **`await endo.selftest()` → 29/29**, two of them new: the fixture's link is in the snapshot,
-   and clicking it navigates the tab. **Expect the second to FAIL** — see feature 4. *(P7/P9)*
+   and clicking it navigates the tab. **This is now the decisive experiment for phase 12** — the
+   coordinate and window theories are both measured dead, and the surviving explanation (a
+   pre-P11e walk-counter ref pointing at a different node) predicts these two PASS on a reloaded
+   build. Whichever way it lands, it settles the phase. *(P7/P9/P12)*
 3. ~~The measurement run itself~~ — **done 2026-08-12, both legs.** Re-take it post-reload,
    because the numbers above were served by a pre-P11e panel. *(features 2 and 3)*
 4. **One answer containing a table**, to confirm the P9b markdown path renders live. *(P9b)*
@@ -128,21 +131,91 @@ click story title     @f0e12  -> 29 comment-links, still FRONT page
 click nav "new"       @f0e3   -> still FRONT page
 ```
 
-**Ruled out already:** it is not the stale build (`centreOf` and `click` are byte-identical
-between the loaded build and HEAD — `git diff 994c682~1 HEAD -- extension/cdp.js` touches
-neither); it is not a background tab (`tabs` starred it, and `use_tab` foregrounded it first).
-**Not ruled out:** whether mouse hit-testing needs a *visible window* — the Chrome window was
-behind an editor throughout. Settle that first, with a button click as the control: a button
-that mutates the DOM proves events are hit-testing in whatever state the window is in.
+**Both original hypotheses are now DEAD, measured 2026-08-14 by replicating `centreOf` and
+`click` byte-for-byte over raw CDP against a Chrome launched with `--remote-debugging-port`, no
+extension and no model in the loop:**
 
-If it is not the window, suspect the coordinate space. `centreOf` takes `DOM.getBoxModel`'s
-`content` quad and hands it straight to `Input.dispatchMouseEvent` — document coordinates into a
-viewport-coordinate API, plus whatever per-site zoom the profile carries.
+- **Coordinate space is NOT the bug.** `DOM.getBoxModel`'s `content` quad is *already*
+  viewport-relative CSS pixels on Chrome 151 and agrees with what `Input.dispatchMouseEvent`
+  expects. A link at the top and an identical link 2,318px below the fold both navigated, and
+  `elementFromPoint` matched the intended `<a>` before dispatch at scroll offset 2318. **All
+  three of the exact HN links above navigated correctly** (`document.location` as the
+  discriminator, not link-presence). Do not re-derive this theory from the symptom — it reads
+  extremely plausible and it is wrong.
+- **Window occlusion is NOT the bug.** Button and link both pass identically with the window
+  `normal` and `minimized`.
+- `settle()` timing is not it either: on HN, `frameStartedLoading` at 97ms and `loadEventFired`
+  at 328ms, inside the 300ms sleep + 10s cap.
+
+**The leading hypothesis now: the ref pointed at a different node, and the stale build is back on
+the table because it was excluded on the wrong file.** "Not the stale build" was concluded from
+`git diff 994c682~1 HEAD -- extension/cdp.js` — but the refs are minted in **ax.js, which changed
+58 lines in that same range**. The failing session ran the pre-P11e build, where a ref was a
+**walk position**, and `ax.js:106-114` describes this exact failure in its own words: *"a counter
+renumbers everything below any element that appears or disappears — so after a re-render @f0e12
+silently meant a DIFFERENT control."* The tell is in the bug report itself: `@f0e3`, `@f0e12`,
+`@f0e17` are small and contiguous — the old walk counter. HEAD mints `backendDOMNodeId`, which is
+large and gappy. A click on the wrong node hands back the same page and reports success, which is
+precisely the symptom.
+
+**This is a hypothesis with good evidence, NOT a confirmed fix — nobody has run the current build
+in a browser.** One experiment settles it, and it already exists: reload the extension, then
+`await endo.selftest()` in the panel console. Checks 28/29 (`selftest.js:231-251`) click a real
+link and use the host page's heading as the discriminator. **If the stale-ref theory is right
+those now PASS**, and phase 12 closes without a code change.
 
 **Why 27/27 never caught it:** every click check in the self-test drives a *button* that
 rewrites the page in place, and `back`/`forward` go through `Page.navigateToHistoryEntry` rather
 than the mouse. `click` was only ever proved on the half of the web that does not navigate. The
 fixture now carries a link and the self-test clicks it (checks 28 and 29).
+
+### P12a — the pre-open-source audit (2026-08-14). Four parallel audits: legal, backend, frontend, and the click bug
+
+Everything below is terminal-verifiable and done; **155 → 156 tests**. Nothing here needed a
+browser, which is why it went first.
+
+- **Legal: clean.** No secret ever entered git history (swept all 38 commits, not just HEAD);
+  `LICENSE` is verbatim Apache-2.0; the full 93-package dependency tree is MIT/ISC/BSD with zero
+  copyleft; competitor references are defensible nominative use. Fixed: a real local path in
+  `docs/specs/design.md:11`, `Endoplexity.vbs` missing from `.gitignore`, and `COMET_PORT` —
+  the last old-brand identifier in source — renamed `ENDO_PORT`.
+- **Three real crash paths, all the same root cause: valid JSON that is not an object.** A bare
+  `null` line from either CLI reached `sessionOf()` and killed the bridge; a `null` WS frame did
+  the same through `msg.type`; and `?? []` does not fire on a truthy non-array, so a string
+  `content` reached `.some`. Guarded at both parse boundaries rather than at each reader.
+  `process.on('uncaughtException')` is now a **backstop, not an error channel** — the bridge runs
+  windowless from a Startup `.vbs`, so dying is silent and indistinguishable from a broken install.
+- **`files.ts` used `key in config`**, which walks the prototype chain — `"constructor"` and
+  `"toString"` passed the one check the entire file boundary rests on. `Object.hasOwn` now, the
+  idiom `index.ts:153` already used.
+- **`setup.mjs` checked nothing before writing the launcher.** Node version and `claude`/
+  `cursor-agent` on PATH are checked first, because a written launcher makes a broken install
+  look like a finished one and the failure surfaces at next login, into a log nobody knows about.
+- **The panel could lose history silently.** `cut()` clipped strings only, so a tool row's `args`
+  **object** went to storage uncapped — one `type` call carrying a pasted cover letter, which is
+  the product's own demo scenario. Neither `storage.local.set` had a `.catch`, so hitting the 10MB
+  quota was invisible. `sessions.js:17-19` had predicted this failure in a comment and it could
+  still happen. Pinned by a test **verified to fail on the previous commit**.
+- **Accessibility, against PRODUCT.md's own AA commitment:** `--text-faint` measured 4.40:1 on
+  `--bg` and 4.07:1 on `--sink` in light theme — under AA, on the cost chip and the connection
+  state, which are content. Now 0.53. `<select>` options had `outline: none` plus a **1.13:1**
+  background shift, so keyboard users arrowed through an unmarked list. The `@`-mention menu had
+  no `aria-expanded`/`activedescendant`, so for a screen reader it did not exist — the rows never
+  take focus by design. Tool rows are `aria-live="off"`: the trace recedes for AT the way it
+  already receded visually, instead of firing one announcement per call.
+- **`<all_urls>` → `http/https/file`**, matching what `DRIVABLE` has always accepted. Same
+  behaviour, and it drops Chrome's broadest install-time warning — which matters the week a repo
+  goes public.
+- **No XSS vector.** The render path never touches `innerHTML`; `md.js`/`math.js`/`transcript.js`
+  build DOM through `createElement`/`textContent` only, `SAFE_HREF` allowlists `http(s)` so
+  `javascript:` degrades to literal text, and images are never rendered at all. Attempted
+  bypasses through link titles, malformed hrefs, nested MathML and unclosed fences all failed.
+- **`SECURITY.md` added** — private reporting via GitHub rather than a published email address,
+  and an explicit "known and accepted" list so the gate heuristic, `read_file`'s content exposure
+  and Windows' `0600` are documented limits rather than future surprise reports.
+- **README corrected where it oversold:** the gate is a keyword match on a button's visible
+  **label**, so an icon-only or non-English submit goes ungated; `read_file` puts file contents in
+  the model's context where `upload` never did; and "106 unit tests" was two phases stale.
 
 ### Parked launch chores (P10) — each needs a browser, a camera, or a decision only you can make
 
@@ -460,6 +533,16 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
   in code that was never running. **Reload before any live number, and check the refs**:
   contiguous from `@f0e1` is the old walk counter, large and gappy is `backendDOMNodeId`. Nothing
   in the panel names its build.
+- **`DOM.getBoxModel` returns VIEWPORT coordinates, not document coordinates.** Measured on
+  Chrome 151, 2026-08-14: its `content` quad feeds `Input.dispatchMouseEvent` directly and
+  correctly, at any scroll offset. The opposite reads as obvious — "box model" sounds
+  document-absolute, and `click` calls `scrollIntoViewIfNeeded` first, which *looks* like it must
+  desynchronise the two — and a whole phase was pointed at it. If a click misses, suspect **which
+  node the ref resolved to**, not the arithmetic that turned that node into a point.
+- **Excluding "the stale build" for one file does not exclude it for the feature.** Phase 12's
+  ruling-out ran `git diff … -- extension/cdp.js` and concluded the loaded build was equivalent.
+  Refs are minted in **ax.js**, which changed 58 lines in the same range. When a symptom crosses
+  two files, a byte-identical check on one of them proves nothing about the other.
 - **`click` has only ever been tested on things that do not navigate.** Every click check in the
   self-test drives a button that rewrites the page in place, and back/forward go through
   `Page.navigateToHistoryEntry`, not the mouse — so 27/27 and 155 unit tests were all silent

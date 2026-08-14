@@ -209,11 +209,11 @@ export function runCursor(
 
   createInterface({ input: child.stdout }).on("line", (line) => {
     if (!line.trim()) return;
-    try {
-      onEvent(JSON.parse(line));
-    } catch {
-      onEvent({ type: "stray", text: line });
-    }
+    // Same guard as claude.ts: valid JSON that is not an object still crashes
+    // every reader downstream.
+    let event;
+    try { event = JSON.parse(line); } catch {}
+    onEvent(event && typeof event === "object" ? event : { type: "stray", text: line });
   });
 
   let stderr = "";

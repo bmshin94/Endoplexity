@@ -2,12 +2,23 @@
 // service manager to install, upgrade, or uninstall. Non-Windows: run
 // `npm start` by hand.
 import { existsSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 if (process.platform !== "win32") {
   console.log("autostart is Windows-only for now; run `npm start` yourself.");
   process.exit(0);
+}
+
+// Checked BEFORE the launcher is written. The bridge runs TypeScript with no
+// build step, so on old node it dies at startup — invisibly, from a .vbs, into
+// a log nobody has been told about yet. Setup is the one moment this is cheap
+// to catch, and a written launcher makes a broken install look like a done one.
+const major = Number(process.versions.node.split(".")[0]);
+if (major < 24) {
+  console.error(`node ${process.versions.node} is too old — the bridge runs .ts directly and needs node 24+.`);
+  process.exit(1);
 }
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -38,5 +49,13 @@ try {
   const { ALLOWED_ORIGIN } = await import("../bridge/src/auth.ts");
   if (ALLOWED_ORIGIN) console.log(`expected extension origin: ${ALLOWED_ORIGIN}`);
 } catch {}
+
+// `where`, not a spawn of the CLI itself: both ship as .cmd shims on Windows,
+// which spawnSync cannot run without a shell. A warning rather than a failure —
+// you only need whichever one you actually intend to drive.
+const onPath = (cmd) => spawnSync("where", [cmd], { windowsHide: true }).status === 0;
+const found = ["claude", "cursor-agent"].filter(onPath);
+if (found.length) console.log(`agent CLIs on PATH: ${found.join(", ")}`);
+else console.warn("neither `claude` nor `cursor-agent` is on PATH — install one, or every task fails with ENOENT.");
 
 console.log("next: load extension/ unpacked at chrome://extensions, then open the side panel.");

@@ -1,4 +1,6 @@
 node_modules/
+# setup.mjs writes the launcher here when there is no Startup folder to put it in
+Endoplexity.vbs
 .endo-token
 .endo-mcp.json
 .endo-files.json

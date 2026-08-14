@@ -45,7 +45,9 @@ export function resolve(key: string, configPath: string = CONFIG_PATH): string {
   if (available.length === 0) {
     throw new Error(`no files configured — create ${configPath} shaped like ${SHAPE}`);
   }
-  if (!(key in config)) {
+  // hasOwn, not `in` — `in` walks the prototype chain, so "constructor" and
+  // "toString" would pass the one check the whole file boundary rests on.
+  if (!Object.hasOwn(config, key)) {
     throw new Error(`unknown file key "${key}" — configured keys: ${available.join(", ")}`);
   }
   const path = config[key];

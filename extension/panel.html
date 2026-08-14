@@ -50,7 +50,11 @@
         --line-soft: oklch(0.932 0.006 150);
         --text: oklch(0.25 0.014 150);
         --text-soft: oklch(0.44 0.012 150);
-        --text-faint: oklch(0.56 0.01 150);
+        /* 0.53, not 0.56: faint is used for the cost chip, the connection state
+           and the "no tab attached yet" line — real content, not decoration —
+           and 0.56 measured 4.40:1 on --bg and 4.07:1 on --sink, both under AA.
+           0.53 clears 4.5:1 against both. Dark theme already did. */
+        --text-faint: oklch(0.53 0.01 150);
         --accent: oklch(0.52 0.13 152);
         --accent-hi: oklch(0.46 0.13 152);
         --accent-wash: oklch(0.52 0.13 152 / 0.1);
@@ -433,6 +437,8 @@
         font-size: var(--t-meta);
         color: var(--text-soft);
       }
+      /* A run that ended in failure must not read like "reconnected". */
+      .note.bad { color: var(--danger); }
       .gate-row.ok { color: var(--accent); }
       .gate-row.failed { color: var(--danger); }
       .chip {
@@ -733,10 +739,14 @@
         cursor: pointer;
         transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
       }
+      /* --sink against the picker's own --raise is 1.13:1, so suppressing the
+         native ring left keyboard users arrowing through an unmarked list.
+         The accent outline is the affordance now, not the background shift. */
       option:hover, option:focus {
-        background: var(--sink);
+        background: var(--accent-wash);
         color: var(--text);
-        outline: none;
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
       }
       option:checked { color: var(--text); font-weight: 560; }
       /* The tick moves to the trailing edge, so every label starts on the same
@@ -1045,7 +1055,13 @@
       <!-- Filled by panel.js while you are typing an @-mention. Ahead of the
            textarea in the DOM so it reads before the box it belongs to. -->
       <div id="mentions" role="listbox" aria-label="Open tabs"></div>
+      <!-- combobox + aria-expanded is what makes the @-mention menu exist for a
+           screen reader at all: the rows never take focus (their mousedown is
+           prevented), so without aria-activedescendant nothing announces the
+           row the arrow keys are on. -->
       <textarea id="prompt" rows="2" spellcheck="false"
+        role="combobox" aria-expanded="false" aria-controls="mentions"
+        aria-autocomplete="list" aria-haspopup="listbox"
         placeholder="Ask it to do something on this page…"></textarea>
       <div class="controls">
         <select id="model" title="which CLI answers is picked from the model" aria-label="Model">
