@@ -29,17 +29,16 @@ failed run to learn, and trimming them to hit a line count would trade money for
 
 ## Next session — start here
 
-**Phase 12 is closed and the repo is audit-clean. What is left is a camera and a `git push`.**
+**Shipped 2026-08-14 — public at `github.com/Endokelp/Endoplexity`. Phase 12 is closed.**
 `click` was never broken — the failing session ran a cached pre-P11e build whose refs were walk
 positions, so the click landed on a different node (full account under Phase 12). A reloaded
 HEAD build passes the link-navigation checks live. Four audits — legal, backend, frontend,
-click — are done and their fixes are committed (P12a); no BLOCKER survived. **The remaining work
-is the launch chores below: record the demo, create the repo, push.** Both are yours; neither is
-a code change.
+click — are done and their fixes are committed (P12a); no BLOCKER survived.
 
-**One thing still owed before the demo:** the token numbers in the README belong to a stale
-panel. P11e's 3.8x has still never run in a browser — item 3 on the checklist, and it is now
-cheap, because the panel is already reloaded and correct.
+**Nothing is blocked and nothing is owed.** The next thing is whatever a public repo asks for:
+the LinkedIn post is drafted but unposted, the gate frame is still unrecorded, and every token
+number in the README is inherited from a stale panel rather than measured on the build that is
+now live (`npm run bench`, checklist item 3 — cheap now that the panel is reloaded and correct).
 
 **The run that blocked this phase is no longer blocked, and it is no longer manual.** "Nothing
 else can be built from a terminal" was wrong: the bridge's own `/mcp` endpoint answers from a
@@ -240,17 +239,40 @@ browser, which is why it went first.
   **label**, so an icon-only or non-English submit goes ungated; `read_file` puts file contents in
   the model's context where `upload` never did; and "106 unit tests" was two phases stale.
 
-### Parked launch chores (P10) — each needs a browser, a camera, or a decision only you can make
+### P10 launch chores — SHIPPED 2026-08-14. Live at `github.com/Endokelp/Endoplexity`
 
-- **Create the GitHub repo and push.** Real URL `github.com/Endokelp/Endoplexity` (capital E —
-  confirmed 2026-08-14, the repo exists and is public and empty), written
-  into `README.md` and the LinkedIn draft — if the real one differs, both change. First push is
-  the moment to confirm no `.endo-token` / `.endo-files.json` / `.endo-mcp.json` rode along.
-- **Record the demo.** Shot list in `docs/launch.md`. The gate frame at 16–21s is the one that
-  answers "you let an AI click submit?".
-- **Post it.** Draft written, needs a real link.
-- **Decide the copyright name.** `NOTICE` says "Endokelp" — the git identity, not necessarily
-  the name wanted on a legal notice.
+- ~~**Create the GitHub repo and push.**~~ **Done.** Public, `main`, 42 commits, 64 files. Verified
+  before pushing: 0 secret hits across `git log -p --all`, and none of `.endo-token` /
+  `.endo-files.json` / `.endo-mcp.json` / `Endoplexity.vbs` / `demoVid.mp4` tracked. Topics,
+  description and private vulnerability reporting are set; wiki and projects off.
+- **The commit emails were rewritten before the push, and that window is now closed.** All 42
+  commits carry `183029581+Endokelp@users.noreply.github.com`; the personal gmail is gone from
+  history. Verified the right way — **the tree hash is identical before and after**
+  (`a70a12c1…`), so only metadata moved. Doing this after a push would have meant a force-push
+  over public history, which is why it was worth the one blocked-permission detour.
+- ~~**Record the demo.**~~ **Done, and it is not the shot list's demo.** What was recorded is the
+  multi-tab research run (prompt 3), not the form-fill-to-gate centrepiece: three pricing pages
+  in three tabs, a plan link that lived on another page, ending on a rendered comparison table,
+  a real Sources list and `605,608 tokens · 72s`. `demoVid.mp4` (306MB) is gitignored; the
+  shipped assets are `docs/demo.mp4` (1.9MB, 51.8s, first 10s cut, 1.75x, silent, 1440 wide),
+  `docs/demo.gif` (2.2MB, 27s, the whole run — the README leads with it because GitHub will not
+  play a repo-hosted `<video>` but autoplays a GIF), and `docs/hero.png`.
+  **The run is in `trust` mode, so the gate never fires in it** — the README now says so
+  outright rather than letting the safety section imply otherwise. **The gate frame is still
+  unrecorded**, and it is still the shot that answers "you let an AI click submit?".
+- ~~**Decide the copyright name.**~~ **Done.** `NOTICE` reads
+  `Copyright 2026 Venkata Anirudh Devireddy (Endokelp)`.
+- **Post it.** v2 draft written against the real recording (`docs/launch.md`), four lessons
+  rather than three — the fourth is phase 12, which is the strongest because it is a failure
+  story. **Not yet posted.** Attach `docs/demo.mp4` natively rather than linking it.
+
+### Worth recording next, now that the panel is reloaded and correct
+
+- **The gate firing, on a real Greenhouse submit.** The one frame the launch material keeps
+  promising and does not have.
+- **P11e's 3.8x, live.** Checklist item 3. Every token number in the README came from a stale
+  panel; `npm run bench` against the current build would replace an inherited number with a
+  measured one, and 119,856 → 31,626 is a stronger closing card than the cost chip alone.
 
 ### Still queued, unscheduled
 
