@@ -8,3 +8,8 @@ Endoplexity.vbs
 # Raw event streams from `npm run bench` — a measurement's evidence, not source.
 *.jsonl
 dist/
+
+# The raw screen recording — 300MB+, and the edited asset is what ships.
+demoVid.mp4
+*.mp4
+!docs/demo.mp4

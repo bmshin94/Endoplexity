@@ -6,3 +6,5 @@
 # byte substitution inside it fails the chunk CRC. The extension icons are
 # committed, so they have to round-trip exactly.
 *.png binary
+*.mp4 binary
+*.gif binary

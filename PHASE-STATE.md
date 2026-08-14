@@ -242,7 +242,8 @@ browser, which is why it went first.
 
 ### Parked launch chores (P10) — each needs a browser, a camera, or a decision only you can make
 
-- **Create the GitHub repo and push.** Assumed URL `github.com/Endokelp/endoplexity`, written
+- **Create the GitHub repo and push.** Real URL `github.com/Endokelp/Endoplexity` (capital E —
+  confirmed 2026-08-14, the repo exists and is public and empty), written
   into `README.md` and the LinkedIn draft — if the real one differs, both change. First push is
   the moment to confirm no `.endo-token` / `.endo-files.json` / `.endo-mcp.json` rode along.
 - **Record the demo.** Shot list in `docs/launch.md`. The gate frame at 16–21s is the one that

@@ -2,12 +2,54 @@
 
 Working copy for the launch. Not part of the software.
 
-## LinkedIn post
+## LinkedIn post — v2, written against the recorded demo (2026-08-14)
 
-> Engineering story + launch, one post. Paste as-is; LinkedIn strips the `**`
-> markers, so the bold lines are written to survive as plain text.
+> Attach `docs/demo.mp4`. LinkedIn strips markdown, so this is written to read
+> correctly as plain text. The v1 draft is kept below it for reference.
 
 ---
+
+I built a browser agent that runs on the AI subscription I already pay for, instead of a metered API key.
+
+It's a Chrome side panel. You point it at the page you're on and say what you want. In the video it opens three pricing pages in three tabs, reads all of them, chases a plan link that turned out to live on a different page entirely, and comes back with a comparison table and the sources it actually used.
+
+It drives your real browser, already signed into your real accounts. That "started debugging this browser" banner is Chrome's, and it stays up the whole time. No separate automation browser, no logging back into everything.
+
+The part I didn't have to build was the brain. `claude -p` is already a tool-calling agent loop, fully paid for, sitting idle on my machine. What was missing was hands and a face.
+
+Four things I got wrong. That's where the engineering actually was.
+
+1. Mouse events don't cross iframe boundaries.
+
+I kept sending clicks to the page's main debugger session with translated coordinates. The submit button did nothing. Events sent to the main session are hit-tested by the root renderer and never enter a cross-origin iframe — and every serious job application form is one. Mouse events have to go to the element's own session. There is no coordinate translation anywhere, which was the exact opposite of what I'd built.
+
+2. The worst bug looked identical to success.
+
+The agent filled a Greenhouse application perfectly. Every tool call returned success. Every value landed. None of it on the tab I was watching — it had bound to a tab at startup and never re-bound. A tool that reports success against the wrong target is worse than one that crashes.
+
+3. I built a pairing endpoint, then deleted it.
+
+The panel had to prove it was really my extension, so I wrote an HTTP endpoint to hand it a token. It refused its own panel: Chrome sends no Origin header at all on fetch() from an extension page. But the WebSocket upgrade does carry one, and page script cannot forge it. So identity moved onto the socket and the token left that path entirely. The best code I wrote that week is code that isn't there.
+
+4. I spent a phase fixing a bug that did not exist.
+
+Clicking links stopped working. I had a tidy theory about coordinate spaces. I finally measured it instead of believing it: the theory was wrong, and every link clicked fine. The real cause was that Chrome keeps serving the extension it cached until you explicitly reload it, so I'd been testing a build from days earlier — one whose element references renumbered themselves whenever the page changed underneath them. The clicks were landing on the wrong elements.
+
+The evidence had been sitting in my own bug report the entire time. The reference numbers I'd pasted were in the old format. I just never read them as data.
+
+On letting a model click things: submit, delete and purchase stop and ask. That gate lives in the bridge, never in a prompt, so nothing the model says can widen its own permissions. Silence denies. It is also a keyword match on button labels rather than real comprehension — which is stated plainly in the README, because a safety feature you have oversold is worse than one you never shipped.
+
+A complete job application: 10 turns, 42 seconds, $0.0959 of equivalent API spend — covered by the subscription, which was the whole point.
+
+Open source, Apache-2.0.
+
+github.com/Endokelp/Endoplexity
+
+#buildinpublic #chromeextension #ai
+
+---
+
+## LinkedIn post — v1 (superseded, kept for the phrasing)
 
 I spent the last few weeks building a browser agent that runs on the AI subscription I already pay for, instead of a metered API key.
 
@@ -33,7 +75,7 @@ A complete job application: 10 turns, 42 seconds, $0.0959 of equivalent API spen
 
 Open source, Apache-2.0.
 
-github.com/Endokelp/endoplexity
+github.com/Endokelp/Endoplexity
 
 #buildinpublic #chromeextension #ai
 
