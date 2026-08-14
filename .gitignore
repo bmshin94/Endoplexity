@@ -1,4 +1,11 @@
 node_modules/
+
+# Internal build-process notes — not part of the shipped software
+PHASE-STATE.md
+DESIGN.md
+PRODUCT.md
+docs/specs/
+docs/launch.md
 # setup.mjs writes the launcher here when there is no Startup folder to put it in
 Endoplexity.vbs
 .endo-token
