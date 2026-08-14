@@ -29,6 +29,18 @@ failed run to learn, and trimming them to hit a line count would trade money for
 
 ## Next session — start here
 
+**Phase 12 is closed and the repo is audit-clean. What is left is a camera and a `git push`.**
+`click` was never broken — the failing session ran a cached pre-P11e build whose refs were walk
+positions, so the click landed on a different node (full account under Phase 12). A reloaded
+HEAD build passes the link-navigation checks live. Four audits — legal, backend, frontend,
+click — are done and their fixes are committed (P12a); no BLOCKER survived. **The remaining work
+is the launch chores below: record the demo, create the repo, push.** Both are yours; neither is
+a code change.
+
+**One thing still owed before the demo:** the token numbers in the README belong to a stale
+panel. P11e's 3.8x has still never run in a browser — item 3 on the checklist, and it is now
+cheap, because the panel is already reloaded and correct.
+
 **The run that blocked this phase is no longer blocked, and it is no longer manual.** "Nothing
 else can be built from a terminal" was wrong: the bridge's own `/mcp` endpoint answers from a
 terminal, and the CLI adapters are plain functions, so `npm run bench -- <model> <label> "<task>"`
@@ -76,13 +88,18 @@ Cheap once the extension is loaded. Items 3 and 5 now run from a terminal via `n
 0. **RELOAD the extension at `chrome://extensions` first, every time.** Nothing else on this
    list means anything against a cached build, and nothing on screen says which build it is.
    Check the refs in any snapshot: contiguous from `@f0e1` is stale. *(2026-08-12)*
-1. **Load `extension/` unpacked** and confirm Chrome's id is `lblllkbcfcaecfpefighocaefnfkebjj`.
-   A unit test recomputing our own formula cannot catch a disagreement with Chrome. *(P9)*
-2. **`await endo.selftest()` → 29/29**, two of them new: the fixture's link is in the snapshot,
-   and clicking it navigates the tab. **This is now the decisive experiment for phase 12** — the
-   coordinate and window theories are both measured dead, and the surviving explanation (a
-   pre-P11e walk-counter ref pointing at a different node) predicts these two PASS on a reloaded
-   build. Whichever way it lands, it settles the phase. *(P7/P9/P12)*
+1. ~~**Load `extension/` unpacked** and confirm Chrome's id~~ — **discharged 2026-08-14, and by
+   something stronger than reading it off the page.** The panel reached the bridge, and the WS
+   upgrade is gated on an exact match against the id derived from the manifest's RSA `key`. A
+   connected panel *is* the proof the id agrees with Chrome's. *(P9)*
+2. ~~**`await endo.selftest()`**~~ — **run 2026-08-14 on a reloaded build: 28 PASS, 2 SKIP, 1
+   FAIL, and the failure was in the check, not the code.** Both new checks pass, which is what
+   closed phase 12. The skips are by design (no `filePath` given; no decoy button to scope a
+   scroll to). The failure — "re-reading an untouched page costs one line, not a page" — measured
+   an unchanged re-read as a **fraction of the page**, but that response is a fixed 97-char
+   marker, so on the 379-char fixture a delta doing its job exactly landed at 25.6% against a 25%
+   bar. Now asserted absolutely, against `UNCHANGED` imported from ax.js. **Re-run to see it
+   green** — the product code was never wrong, so nothing else waits on it. *(P7/P9/P12)*
 3. ~~The measurement run itself~~ — **done 2026-08-12, both legs.** Re-take it post-reload,
    because the numbers above were served by a pre-P11e panel. *(features 2 and 3)*
 4. **One answer containing a table**, to confirm the P9b markdown path renders live. *(P9b)*
@@ -117,9 +134,26 @@ Cheap once the extension is loaded. Items 3 and 5 now run from a terminal via `n
    the other way.** Nothing was done to the claude briefing, deliberately: the defect it would
    have been fixing was already fixed in P11a. cursor got the correction instead.
 
-### Phase 12 — the one that matters: `click` does not follow links
+### Phase 12 — CLOSED 2026-08-14 without a line of `cdp.js` changing. The bug was the build.
 
-Found while measuring feature 3, and it is bigger than either CLI. Both models saw
+**`PASS clicking a link navigates the tab`**, live, on a reloaded HEAD build. The whole phase was
+chasing a defect that does not exist in the tree: the failing session ran the pre-P11e build,
+where a ref was a **walk position**, so `@f0e17` had come to mean a different node by the time it
+was clicked. Clicking the wrong node hands back the same page and reports success — which is
+exactly what was seen, and why it read as a mouse-event bug. Two hypotheses were measured dead
+first (below); both were about the arithmetic, and the arithmetic was never wrong.
+
+**What this cost, and the lesson worth keeping:** the ruling-out step ran
+`git diff … -- extension/cdp.js`, saw byte-identical `centreOf` and `click`, and wrote off "the
+stale build". Refs are minted in **ax.js**, which changed 58 lines in the same range. The refs
+quoted in the bug report — `@f0e3`, `@f0e12`, `@f0e17`, small and contiguous — were themselves
+the evidence of a stale build, sitting in plain sight in the report the whole time.
+
+Retained below because a dead hypothesis that reads this plausible will be re-derived otherwise.
+
+---
+
+Found while measuring feature 3. Both models saw
 `@f0e17 [link] "200 comments"` correctly serialised, both clicked it, both were handed the front
 page back; claude then routed around it by navigating to HN's Firebase JSON, cursor by trying
 two more refs. Reproduced with no model in the loop at all — a story title (an ordinary external
@@ -147,22 +181,11 @@ extension and no model in the loop:**
 - `settle()` timing is not it either: on HN, `frameStartedLoading` at 97ms and `loadEventFired`
   at 328ms, inside the 300ms sleep + 10s cap.
 
-**The leading hypothesis now: the ref pointed at a different node, and the stale build is back on
-the table because it was excluded on the wrong file.** "Not the stale build" was concluded from
-`git diff 994c682~1 HEAD -- extension/cdp.js` — but the refs are minted in **ax.js, which changed
-58 lines in that same range**. The failing session ran the pre-P11e build, where a ref was a
-**walk position**, and `ax.js:106-114` describes this exact failure in its own words: *"a counter
-renumbers everything below any element that appears or disappears — so after a re-render @f0e12
-silently meant a DIFFERENT control."* The tell is in the bug report itself: `@f0e3`, `@f0e12`,
-`@f0e17` are small and contiguous — the old walk counter. HEAD mints `backendDOMNodeId`, which is
-large and gappy. A click on the wrong node hands back the same page and reports success, which is
-precisely the symptom.
-
-**This is a hypothesis with good evidence, NOT a confirmed fix — nobody has run the current build
-in a browser.** One experiment settles it, and it already exists: reload the extension, then
-`await endo.selftest()` in the panel console. Checks 28/29 (`selftest.js:231-251`) click a real
-link and use the host page's heading as the discriminator. **If the stale-ref theory is right
-those now PASS**, and phase 12 closes without a code change.
+**The explanation that survived, and is now confirmed live:** the ref pointed at a different
+node. `ax.js:106-114` describes the failure in its own words — *"a counter renumbers everything
+below any element that appears or disappears, so after a re-render @f0e12 silently meant a
+DIFFERENT control"* — which is what a pre-P11e ref was. HEAD mints `backendDOMNodeId`, large and
+gappy; the live run confirms it (`hover @f0e195`). Checks 28 and 29 both **PASS**.
 
 **Why 27/27 never caught it:** every click check in the self-test drives a *button* that
 rewrites the page in place, and `back`/`forward` go through `Page.navigateToHistoryEntry` rather
@@ -569,6 +592,13 @@ chips, if plain `@label` text in the box turns out to read as ordinary prose.
   changed, so a form fill would have left it blind to the Submit button it exists to catch. Any
   future consumer of page text inherits this: ask whether the text starts with `UNCHANGED` before
   treating it as the whole page.
+- **A threshold expressed as a FRACTION of the page cannot measure a fixed-size response.** An
+  unchanged re-read is always the same 97-char marker, so `again.length < first.length / 4` is
+  really asking "is the fixture bigger than 388 chars?" — it passes or fails on the size of the
+  page, not on anything the delta did. Cost a FAIL on a live self-test run where the code was
+  perfect. Same family as the gotcha below, from the opposite direction: one needs a big enough
+  page to produce a delta at all, this one needs a big enough page for a ratio to mean anything.
+  When the thing under test is a constant, assert on the constant.
 - **A delta test needs a realistically sized page.** Two- and three-line fixtures never produce
   one — a single changed line is already over the 40% bar — so a test written on a small page
   silently exercises the full-page path and proves nothing about deltas. Cost two rounds of

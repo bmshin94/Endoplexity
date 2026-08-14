@@ -9,6 +9,9 @@
 
 import * as cdp from "./cdp.js";
 import { runTool } from "./tools.js";
+// Imported, never copied — same reason gate.ts imports it. A drifted copy is a
+// check that passes against a marker nothing emits any more.
+import { UNCHANGED } from "./ax.js";
 
 const FIXTURE = "http://127.0.0.1:8787/fixtures/host.html";
 // The page host.html embeds, loaded top-level here purely as a second real URL
@@ -293,7 +296,15 @@ async function runChecks(check, skip, filePath) {
   const again = await cdp.snapshot();
   check(
     "re-reading an untouched page costs one line, not a page",
-    again.length < first.length / 4 ? null : `${again.length} chars against ${first.length}`,
+    // Absolute, not a fraction of the page. An unchanged re-read is always the
+    // same ~97-char marker, so measuring it as a ratio says more about the
+    // fixture's size than about the delta: on this 379-char page a delta doing
+    // exactly its job lands at 25.6% and fails a `length / 4` bar. Measured
+    // 2026-08-14, and it is the mirror of the gotcha that says a delta test
+    // needs a realistically sized page — a ratio bar needs one too.
+    again.startsWith(UNCHANGED) && again.length < 200
+      ? null
+      : `${again.length} chars against ${first.length}`,
   );
   check(
     "and a ref from before that re-read still resolves",
