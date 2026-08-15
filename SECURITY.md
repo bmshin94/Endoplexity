@@ -25,15 +25,22 @@ The trust boundary is deliberately small:
   gitignored `0600` file that is never passed on a command line.
 - The agent CLIs run with browser tools and nothing else — shell, write and
   fetch are denied, and this was verified by trying them, not by reading docs.
-- `upload` and `read_file` resolve a key from `.endo-files.json`. The model
-  never sees or supplies a filesystem path.
+- `upload` and `read_file` resolve a key from the allow-list — the human's
+  `.endo-files.json`, plus `.endo-attachments.json` for files attached in the
+  panel. The model never sees or supplies a filesystem path.
+- A panel attachment is **copied** into a bridge-owned directory rather than
+  referenced where it sits, and its key is rebuilt from `[a-z0-9_]` only. A
+  filename cannot describe a location, so `upload` cannot be steered outside
+  that directory by anything a name contains.
 
 ## In scope
 
 - Anything that reaches the bridge from outside loopback, or from a web page,
   or from another extension.
 - Any way a model-supplied string reaches the filesystem, a shell, or a path
-  outside the `.endo-files.json` allow-list.
+  outside the allow-list.
+- Any way a filename arriving over the panel socket writes outside the
+  bridge's own attachment directory.
 - Any way to bypass the approval gate on an irreversible action, or to reach
   `trust` mode without the human selecting it.
 - Any way page content can execute script in the side panel. The panel renders
@@ -54,6 +61,12 @@ restates one is welcome as a discussion, not as a security issue:
 - **`read_file` puts file contents in the model's context**, unlike `upload`.
   The allow-list is the entire boundary. This widening is deliberate and
   recorded.
+- **Attaching a file in the panel adds to that allow-list**, which is the point
+  of the paperclip. It takes a deliberate human gesture through an OS file
+  dialog or a drag, and nothing the model says can attach, remove, or reach a
+  file that was never attached. Removing a chip deletes the bridge's copy; the
+  original is never touched, and a hand-configured entry cannot be deleted from
+  the panel at all.
 - **`0600` does not mean on Windows what it means on POSIX.** Node's `mode`
   only toggles the read-only attribute there; it does not restrict the file to
   its owner. Anything running as your user can read the token regardless — and

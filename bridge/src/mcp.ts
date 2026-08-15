@@ -166,15 +166,18 @@ function build() {
   // handleMcp below) — same lazy-read reasoning as files.ts itself, so a key
   // added while the bridge is running shows up in the description right away.
   const fileKeys = keys();
+  // The no-files line names a recovery the human can perform in the window they
+  // are already looking at, same rule as the snapshot cap notice: "add it to
+  // .endo-files.json" sent people to a text editor for what is now a paperclip.
   const keysNote = fileKeys.length
-    ? `Configured keys: ${fileKeys.join(", ")}.`
-    : "No files are configured — tell the user to add one to .endo-files.json.";
+    ? `Available keys: ${fileKeys.join(", ")}.`
+    : "No files are available — tell the user to attach one with the paperclip in the panel's composer.";
 
   server.registerTool(
     "upload",
     {
       description:
-        `Attach a configured file to the file input on the page and return the page afterwards — do not call snapshot after this. Takes a KEY, never a path: only files the human explicitly configured can be attached. ${keysNote} No ref needed: the real input is often hidden behind a styled button.`,
+        `Put one of the user's files into a file input on the page and return the page afterwards — do not call snapshot after this. Takes a KEY, never a path: only files the human attached or configured can be sent. ${keysNote} No ref needed: the real input is often hidden behind a styled button.`,
       inputSchema: {
         file: z.string().describe('A configured key, e.g. "resume" — not a file path'),
         match: z

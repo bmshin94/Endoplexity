@@ -11,6 +11,9 @@ Endoplexity.vbs
 .endo-token
 .endo-mcp.json
 .endo-files.json
+# The panel's paperclip: the bridge's own map, and the copies it holds.
+.endo-attachments.json
+.endo-attachments/
 *.log
 # Raw event streams from `npm run bench` — a measurement's evidence, not source.
 *.jsonl

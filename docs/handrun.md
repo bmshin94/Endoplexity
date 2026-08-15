@@ -152,16 +152,27 @@ a start date — goes in the prompt.
 
 The resume uploads by KEY, never a path — the model only ever sees a
 name like `resume` in the tool description, never a filesystem path (it runs in
-the browser process, which can read anything you can). A repo-root
-`.endo-files.json` is the one place a key becomes an absolute path, and it's
-a human-edited allow-list, never anything the model writes:
+the browser process, which can read anything you can). `files.ts` is the one
+place a key becomes an absolute path, and it reads two maps, neither of them
+anything the model writes:
 
-```json
-{ "resume": "C:\\Users\\you\\Documents\\resume.pdf" }
-```
+- **`.endo-attachments.json`**, written when you drop a file on the composer,
+  paste one, or use the paperclip. The bytes come over the panel socket — a
+  browser file input hands over a name and a File and deliberately never a path
+  — and the bridge stores its own copy under `.endo-attachments/`. The key is
+  rebuilt from the filename using `[a-z0-9_]` only, so `My CV.pdf` becomes
+  `my_cv` and a name cannot describe a location.
+- **`.endo-files.json`**, hand-edited, for a file you would rather leave where
+  it is. Copy `.endo-files.example.json` to start one:
 
-Copy `.endo-files.example.json` to get started. Not committed — it points at a
-real path on your machine.
+  ```json
+  { "resume": "C:\\Users\\you\\Documents\\resume.pdf" }
+  ```
+
+Neither is committed. On a key collision the hand-edited entry wins and the
+attachment takes `resume_2`, so both stay reachable. The panel draws a chip per
+key; hand-configured ones have no `×`, because deleting out of a map you
+maintain by hand is not the panel's business.
 
 ## On a real job site
 

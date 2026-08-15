@@ -9,6 +9,7 @@ import { handleMcp, setMode } from "./mcp.ts";
 import { setPanel, dropPanel, settle, settleGate, sendPanel } from "./relay.ts";
 import { runClaude, writeMcpConfig } from "./claude.ts";
 import { runCursor, writeCursorConfig } from "./cursor.ts";
+import { attach, detach, list as listFiles } from "./files.ts";
 
 /**
  * The panel picks a model, not a CLI — one dropdown, and which binary answers is
@@ -236,7 +237,14 @@ wss.on("connection", (ws) => {
   // still running, and whether the last one left a transcript to reply to.
   // `resumable` used to reset to false on every remount, which is why Reply
   // went dark after a window switch even though the bridge still had the id.
-  ws.send(JSON.stringify({ type: "hello", running: running !== null, resumable: session !== null }));
+  //
+  // The files ride along for the same reason. They live on disk here, not in
+  // the panel — Chrome tears the side panel document down on every window
+  // switch, so a list held there would take the chips with it and the user
+  // would be re-attaching a resume several times an hour.
+  ws.send(
+    JSON.stringify({ type: "hello", running: running !== null, resumable: session !== null, files: listFiles() }),
+  );
 
   ws.on("message", (raw) => {
     let msg;
@@ -257,6 +265,27 @@ wss.on("connection", (ws) => {
       // nothing the agent says can widen its own permissions.
       setMode(msg.mode);
       startTask(msg.prompt, msg.model, { resume: msg.resume === true });
+    } else if (msg.type === "attach-file" || msg.type === "detach-file") {
+      // The panel cannot hand over a path — an <input type="file"> gives a name
+      // and bytes and nothing else — so the bytes come over this socket and the
+      // copy on disk is what `upload` and `read_file` then resolve a key to.
+      try {
+        if (msg.type === "attach-file") {
+          // base64 rather than a binary frame: the panel's protocol is one JSON
+          // shape per message and a second one buys nothing here. A ~33% size
+          // tax on a file that is sent once is not worth a framing branch.
+          const added = attach(msg.name, Buffer.from(String(msg.data ?? ""), "base64"));
+          console.log(`attached "${added.key}" — ${added.name}, ${added.size} bytes`);
+        } else {
+          detach(msg.key);
+          console.log(`detached "${msg.key}"`);
+        }
+        ws.send(JSON.stringify({ type: "files", files: listFiles() }));
+      } catch (err) {
+        // Named, and sent back rather than logged: the bridge runs windowless,
+        // so a refusal nobody sees is a paperclip that silently does nothing.
+        ws.send(JSON.stringify({ type: "file-failed", error: (err as Error).message }));
+      }
     } else if (msg.type === "stop") running?.kill();
     // The panel archived its transcript and started clean, so the CLI session
     // must go too — otherwise a Reply after the next remount would resume the

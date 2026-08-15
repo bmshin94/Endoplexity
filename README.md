@@ -79,9 +79,10 @@ Two decisions do most of the work here:
   in one turn instead of two. After the first read, only the lines that
   changed get sent again.
 
-`read_file` reads a configured document as text (PDF, DOCX, XLSX, PPTX, CSV,
-JSON, Markdown, or plain text), so the agent can answer questions *about* an
-attachment instead of only pushing it into a form field.
+`read_file` reads an attached document as text (PDF, DOCX, XLSX, PPTX, CSV,
+JSON, Markdown, or any text file), so the agent can answer questions *about* an
+attachment instead of only pushing it into a form field. You attach one by
+dropping it on the composer — see [Files](#6-files).
 
 ## Getting started
 
@@ -141,16 +142,22 @@ npm run cursor-login
 This is a one-time login into a bridge-owned Cursor profile, kept separate
 from your normal `cursor-agent` login so the two never collide.
 
-### 6. (Optional) Let it read your files
+### 6. Files
 
-If you want the agent to attach or read a document, resume, or spreadsheet
-during a task, copy the example config and point it at your file:
+Drag a file onto the composer, paste one, or use the paperclip. It shows up as
+a chip, and from then on the agent can read it (`read_file`) or put it into a
+form field (`upload`). Any file type — anything it can't turn into text, it
+says so rather than guessing.
+
+The bridge keeps its own copy and hands the model a **key** (`resume`), never a
+path. Attachments survive restarts, and the `×` on a chip deletes the copy.
+
+If you'd rather point at a file where it already lives, `.endo-files.json` still
+works and behaves identically:
 
 ```bash
 cp .endo-files.example.json .endo-files.json
 ```
-
-Then edit `.endo-files.json` and add a path, for example:
 
 ```json
 {
@@ -158,8 +165,8 @@ Then edit `.endo-files.json` and add a path, for example:
 }
 ```
 
-The model only ever sees the key (`resume`), never the path. This file is
-gitignored, so it stays on your machine.
+Both files are gitignored, and so is the attachment directory — everything
+stays on your machine.
 
 ### 7. Run your first task
 

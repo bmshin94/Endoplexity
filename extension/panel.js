@@ -4,6 +4,7 @@ import { runTool } from "./tools.js";
 import * as ui from "./transcript.js";
 import { fresh, pack, startNew, titleOf } from "./sessions.js";
 import { block as mentionBlock, label as mentionLabel } from "./mentions.js";
+import { block as filesBlock, humanSize, toBase64 } from "./attachments.js";
 
 // No token anywhere in here on purpose. The bridge identifies this panel by the
 // Origin Chrome puts on the upgrade, which page script cannot forge — see the
@@ -56,6 +57,10 @@ const historyOpen = document.getElementById("history-open");
 const viewingBar = document.getElementById("viewing");
 const toCurrentBtn = document.getElementById("to-current");
 const mentionsEl = document.getElementById("mentions");
+const composerEl = document.querySelector(".composer");
+const filesEl = document.getElementById("files");
+const attachBtn = document.getElementById("attach");
+const fileInput = document.getElementById("file-input");
 
 ui.mount(chatEl, stepEl, logEl, () => save());
 
@@ -442,6 +447,10 @@ function connect() {
       if (dropping) dropBridgeSession();
       // What the panel cannot know after a remount.
       resumable = dropping ? false : msg.resumable === true;
+      // Including which files exist: they live on the bridge's disk, and this
+      // document is torn down and rebuilt on every window switch.
+      files = msg.files ?? [];
+      drawFiles();
       // Its events are about to start arriving, and they belong to the live
       // transcript — not to whatever archived one is on screen.
       if (msg.running && viewing !== 0) showSession(0);
@@ -449,6 +458,13 @@ function connect() {
       if (msg.running) ui.note("reconnected — the task that was running is still running");
       return;
     }
+    // The bridge answers every attach and every remove with the whole list, so
+    // the chips are never drawn from this side's guess about what a click did.
+    if (msg.type === "files") {
+      files = msg.files ?? [];
+      return void drawFiles();
+    }
+    if (msg.type === "file-failed") return void ui.note(`could not attach — ${msg.error}`, true);
     if (msg.type === "gate") return void showGate(msg);
     if (msg.type === "task-event") {
       // "done" is the child exiting, however it went — including a Stop.
@@ -572,9 +588,14 @@ async function runTask(resume = false) {
   // Unlike the page line, this is NOT skipped on a reply: a tab mentioned in a
   // follow-up is new information, and the transcript cannot already hold it.
   const pointed = mentionBlock(prompt, mentions);
+  // Also not skipped on a reply, and for a stronger reason than mentions: a
+  // file can be attached DURING a conversation — "here's my cover letter too" —
+  // and the transcript cannot already hold a key that did not exist when the
+  // run started. It costs one line per file.
+  const attached = filesBlock(files);
   // The bridge gets `sent`; the transcript below shows `prompt` alone, so the
   // conversation reads as what the human said rather than as plumbing.
-  const sent = [page && `The page you are on is "${page.title}" — ${page.url}`, pointed, prompt]
+  const sent = [page && `The page you are on is "${page.title}" — ${page.url}`, attached, pointed, prompt]
     .filter(Boolean)
     .join("\n\n");
   // The model rides along, but the bridge overrules it on a reply: a claude
@@ -618,6 +639,171 @@ replyBtn.addEventListener("click", () => runTask(true));
 stopBtn.addEventListener("click", () => {
   ui.note("stopping");
   send({ type: "stop" });
+});
+
+/* ---- attaching a file ------------------------------------------------------
+ *
+ * The gesture every assistant has and this panel did not: put a file in, and
+ * the agent can read it or drop it into a form. Before this, a file reached the
+ * agent only by hand-editing .endo-files.json with an absolute Windows path —
+ * a config chore standing where a paperclip belongs.
+ *
+ * The bytes go to the bridge, not the path. A browser <input type="file">
+ * hands over a name and a File object and deliberately never a real path, so
+ * there is nothing to point `upload` at — the bridge writes its own copy and
+ * mints the key. That the copy lands somewhere the bridge owns is the better
+ * boundary anyway: `upload` runs DOM.setFileInputFiles in the BROWSER process,
+ * which can read anything the user can.
+ *
+ * The list of files is the bridge's, not this document's. Chrome tears the side
+ * panel down on every window switch, so a list kept here would take the chips
+ * with it several times an hour; it arrives on every `hello`.
+ */
+
+/** Files the agent can reach, as the bridge last reported them. */
+let files = [];
+
+/** The one place this document builds a sprite icon rather than writing one in
+ *  the HTML — a <use> needs the SVG namespace, and createElement gives an
+ *  unknown inline element that renders nothing. Same trap as math.js's mml(). */
+function spriteIcon(id) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "icon");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(NS, "use");
+  use.setAttribute("href", id);
+  svg.appendChild(use);
+  return svg;
+}
+
+function drawFiles() {
+  filesEl.replaceChildren();
+  filesEl.classList.toggle("show", files.length > 0);
+  for (const file of files) {
+    const chip = document.createElement("div");
+    // file-chip, not chip: `.chip` is the transcript's cost readout already.
+    chip.className = file.fixed ? "file-chip fixed" : "file-chip";
+    chip.setAttribute("role", "listitem");
+    // The key is what the agent calls this file and the human never types it,
+    // so it lives here rather than taking width in a 360px panel.
+    chip.title = file.fixed
+      ? `the agent calls this "${file.key}" — configured in .endo-files.json, so it is not removable here`
+      : `the agent calls this "${file.key}"`;
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = file.name;
+    const size = document.createElement("span");
+    size.className = "size";
+    size.textContent = humanSize(file.size);
+    chip.append(name, size);
+
+    if (!file.fixed) {
+      const remove = document.createElement("button");
+      remove.className = "round";
+      remove.title = `Remove ${file.name}`;
+      remove.setAttribute("aria-label", `Remove ${file.name}`);
+      remove.appendChild(spriteIcon("#i-x"));
+      // The bridge deletes its copy and answers with the new list, so the chips
+      // are never drawn from a guess about what the removal did.
+      remove.addEventListener("click", () => send({ type: "detach-file", key: file.key }));
+      chip.appendChild(remove);
+    }
+    filesEl.appendChild(chip);
+  }
+}
+
+// Mirrors MAX_ATTACH_BYTES in bridge/src/files.ts. Checked here as well as
+// there so a 300MB drop is refused before it is read into the panel's memory
+// and base64'd — the bridge is the boundary, this is just not wasting a minute
+// to reach it.
+const MAX_ATTACH = 25 * 1024 * 1024;
+
+async function attachFiles(list) {
+  const picked = [...list];
+  if (!picked.length) return;
+  attachBtn.disabled = true;
+  try {
+    // One at a time: base64 is a third bigger than the file, and holding four
+    // of those at once to save a few hundred ms on a loopback socket is a poor
+    // trade.
+    for (const file of picked) {
+      if (file.size > MAX_ATTACH) {
+        ui.note(`${file.name} is ${humanSize(file.size)} — the limit is ${humanSize(MAX_ATTACH)}`, true);
+        continue;
+      }
+      try {
+        const data = toBase64(await file.arrayBuffer());
+        if (!send({ type: "attach-file", name: file.name, data })) return;
+      } catch (err) {
+        // A file that vanished or was never readable (a folder dropped as if it
+        // were a file) rejects here rather than at the bridge.
+        ui.note(`could not read ${file.name} — ${err.message}`, true);
+      }
+    }
+  } finally {
+    attachBtn.disabled = false;
+  }
+}
+
+attachBtn.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+  attachFiles(fileInput.files);
+  // Or picking the same file twice in a row is silent: `change` does not fire
+  // when the value has not changed.
+  fileInput.value = "";
+});
+
+/*
+ * Dropping a file. The whole document takes the drop; only the composer lights
+ * up, because that is where the result appears.
+ *
+ * Document-wide is not generosity, it is the fix for a way to lose the panel
+ * entirely: the default action for a drop is "open this", so a file landing
+ * anywhere unhandled navigates the panel document to file:///… and the whole
+ * side panel is gone — transcript, socket and all — until it is reopened. A
+ * drop target that covers only the composer leaves every other pixel armed.
+ */
+const dragHasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
+
+// Counted, not toggled. Moving onto a CHILD element fires `dragleave` on the
+// parent, so a plain add/remove pair flickers the highlight the whole way
+// across the panel.
+let dragDepth = 0;
+const undrag = () => {
+  dragDepth = 0;
+  composerEl.classList.remove("drop");
+};
+
+document.addEventListener("dragenter", (event) => {
+  if (!dragHasFiles(event)) return;
+  dragDepth++;
+  composerEl.classList.add("drop");
+});
+document.addEventListener("dragleave", (event) => {
+  if (!dragHasFiles(event)) return;
+  if (--dragDepth <= 0) undrag();
+});
+// Without preventDefault on dragover there is no drop target at all: the browser
+// takes the default action instead and `drop` never fires.
+document.addEventListener("dragover", (event) => {
+  if (dragHasFiles(event)) event.preventDefault();
+});
+document.addEventListener("drop", (event) => {
+  if (!dragHasFiles(event)) return;
+  event.preventDefault();
+  undrag();
+  attachFiles(event.dataTransfer.files);
+});
+
+// Pasting a file — a screenshot from the clipboard, or a file copied in
+// Explorer. Only when there IS one: an ordinary text paste must land in the box.
+promptEl.addEventListener("paste", (event) => {
+  const pasted = event.clipboardData?.files;
+  if (!pasted?.length) return;
+  event.preventDefault();
+  attachFiles(pasted);
 });
 
 /* ---- @-mentioning a tab ----------------------------------------------------
