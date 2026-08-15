@@ -783,7 +783,11 @@ document.addEventListener("dragenter", (event) => {
 });
 document.addEventListener("dragleave", (event) => {
   if (!dragHasFiles(event)) return;
-  if (--dragDepth <= 0) undrag();
+  // relatedTarget is null exactly when the drag has left the window, which is
+  // the one case the counter cannot be trusted to balance — a drag that leaves
+  // over the panel's edge can skip a leave and strand the highlight on, with
+  // nothing left to switch it off because the drop lands somewhere else.
+  if (event.relatedTarget === null || --dragDepth <= 0) undrag();
 });
 // Without preventDefault on dragover there is no drop target at all: the browser
 // takes the default action instead and `drop` never fires.
@@ -798,8 +802,11 @@ document.addEventListener("drop", (event) => {
 });
 
 // Pasting a file — a screenshot from the clipboard, or a file copied in
-// Explorer. Only when there IS one: an ordinary text paste must land in the box.
-promptEl.addEventListener("paste", (event) => {
+// Explorer. On the document, not the textarea: ctrl+V is the first thing you
+// press after opening the panel, before you have clicked into anything, and a
+// listener on the box would do nothing until you had. Only when there IS a
+// file: an ordinary text paste falls straight through to whatever has focus.
+document.addEventListener("paste", (event) => {
   const pasted = event.clipboardData?.files;
   if (!pasted?.length) return;
   event.preventDefault();

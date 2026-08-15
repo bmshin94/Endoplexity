@@ -274,7 +274,15 @@ wss.on("connection", (ws) => {
           // base64 rather than a binary frame: the panel's protocol is one JSON
           // shape per message and a second one buys nothing here. A ~33% size
           // tax on a file that is sent once is not worth a framing branch.
-          const added = attach(msg.name, Buffer.from(String(msg.data ?? ""), "base64"));
+          //
+          // typeof, not String(): coercing an object gives "[object Object]",
+          // and Buffer.from drops the characters outside the base64 alphabet
+          // rather than throwing — so that decodes to nine real bytes and a
+          // garbled message would WRITE A FILE instead of being refused. Same
+          // family as the three P12a crashes: valid JSON that is not the shape
+          // the reader assumed.
+          if (typeof msg.data !== "string") throw new Error("attach-file carried no data");
+          const added = attach(msg.name, Buffer.from(msg.data, "base64"));
           console.log(`attached "${added.key}" — ${added.name}, ${added.size} bytes`);
         } else {
           detach(msg.key);
